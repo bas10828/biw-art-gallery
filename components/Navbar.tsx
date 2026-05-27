@@ -28,21 +28,15 @@ export default function Navbar() {
       }}
     >
       {/* Logo */}
-      <Link href="/" className="flex items-center gap-2.5 flex-shrink-0">
+      <Link href="/" className="flex items-center flex-shrink-0">
         <Image
-          src="/images/logo-khodseaw.jfif"
+          src="/images/logo-khodseaw.png"
           alt="Biw Art Gallery"
-          width={40}
-          height={40}
-          className="rounded-full object-cover"
-          style={{ border: "1.5px solid rgba(212,168,67,.4)" }}
+          width={110}
+          height={44}
+          className="object-contain"
+          style={{ height: 44, width: "auto" }}
         />
-        <span
-          className="hidden sm:block text-gold font-bold tracking-widest text-base"
-          style={{ fontFamily: "var(--font-serif)" }}
-        >
-          Biw <span className="text-ink">Art</span>
-        </span>
       </Link>
 
       {/* Right side */}
