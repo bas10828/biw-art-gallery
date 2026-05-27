@@ -8,7 +8,10 @@ services:
       - JWT_SECRET=${JWT_SECRET}
     networks:
       - biw_net
+      - postgresql_default
 
 networks:
   biw_net:
+    external: true
+  postgresql_default:
     external: true
