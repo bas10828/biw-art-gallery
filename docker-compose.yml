@@ -1,0 +1,16 @@
+services:
+  biw-art-web:
+    build: .
+    container_name: biw_art_web
+    restart: unless-stopped
+    ports:
+      - "3030:3000"
+    environment:
+      - POSTGRES_URI=${POSTGRES_URI}
+      - JWT_SECRET=${JWT_SECRET}
+    networks:
+      - web_net
+
+networks:
+  web_net:
+    external: true

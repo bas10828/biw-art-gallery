@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ตารางคะแนน · Biw Art Gallery</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <nav class="game-nav">
+    <button class="nav-btn" id="back-gallery-lb">← Gallery</button>
+    <a href="index.html" class="nav-logo">Biw <span>Art Gallery</span></a>
+    <button class="nav-btn" id="play-game-lb">🎮 เล่นเกม</button>
+  </nav>
+
+  <div class="lb-page">
+
+    <div class="lb-header">
+      <h1>🏅 ตารางคะแนน</h1>
+      <p>Hall of Fame · Biw Art Jigsaw Challenge</p>
+    </div>
+
+    <div class="stats-cards">
+      <div class="stat-card">
+        <div class="stat-card-label">เกมทั้งหมด</div>
+        <div class="stat-card-value" id="stat-total">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-label">ผู้เล่น</div>
+        <div class="stat-card-value" id="stat-players">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-card-label">คะแนนสูงสุด</div>
+        <div class="stat-card-value" id="stat-best">0</div>
+      </div>
+    </div>
+
+    <div class="lb-controls">
+      <select class="lb-select" id="filter-artwork">
+        <option value="all">ทุกภาพ</option>
+      </select>
+      <select class="lb-select" id="filter-difficulty">
+        <option value="all">ทุกความยาก</option>
+        <option value="3">3×3 (ง่าย)</option>
+        <option value="4">4×4 (กลาง)</option>
+        <option value="5">5×5 (ยาก)</option>
+      </select>
+      <button class="btn-danger" id="clear-scores">🗑 ล้างคะแนน</button>
+    </div>
+
+    <div class="lb-table-wrap">
+      <div class="empty-scores" id="empty-scores">
+        <div class="empty-icon">🎮</div>
+        <p>ยังไม่มีคะแนน — เริ่มเล่น Jigsaw เลย!</p>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>ผู้เล่น</th>
+            <th>ภาพ</th>
+            <th>ความยาก</th>
+            <th>คะแนน</th>
+            <th>เวลา</th>
+            <th>การเคลื่อน</th>
+            <th>วันที่</th>
+          </tr>
+        </thead>
+        <tbody id="scores-tbody"></tbody>
+      </table>
+    </div>
+
+    <div class="lb-nav-btns">
+      <button class="btn-gold" id="play-game-lb" onclick="window.location.href='game.html'">🎮 เล่นเกม</button>
+      <button class="btn-outline" onclick="window.location.href='index.html'">🖼 ดู Gallery</button>
+    </div>
+
+  </div>
+
+  <footer>
+    <p>© 2026 <span>Biw Art Gallery</span> · All artworks by Biw</p>
+  </footer>
+
+  <script src="js/data.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/leaderboard.js"></script>
+</body>
+</html>

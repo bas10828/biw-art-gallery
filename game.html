@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mini Game · Biw Art Gallery</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <nav class="game-nav">
+    <button class="nav-btn" id="back-gallery">← กลับ Gallery</button>
+    <a href="index.html" class="nav-logo">Biw <span>Art Gallery</span></a>
+    <span id="game-username-display" style="color:var(--gold);font-size:.85rem;"></span>
+  </nav>
+
+  <!-- SECTION 1: Select Artwork -->
+  <div class="game-section active" id="section-select-artwork">
+    <div class="section-container">
+      <div class="section-header">
+        <h2>เลือกรูปสำหรับ Jigsaw</h2>
+        <p>คลิกรูปที่ต้องการ แล้วเลือกความยาก</p>
+      </div>
+      <div class="artwork-select-grid" id="artwork-select-grid"></div>
+    </div>
+  </div>
+
+  <!-- SECTION 2: Select Difficulty -->
+  <div class="game-section" id="section-select-difficulty">
+    <div class="section-container">
+      <div class="section-header">
+        <h2>เลือกความยาก</h2>
+        <p>ยิ่งยาก ยิ่งได้คะแนนสูง</p>
+      </div>
+      <div class="difficulty-box">
+        <img id="diff-artwork-preview" src="" alt="" class="diff-preview">
+        <p class="diff-name" id="diff-artwork-name"></p>
+        <div class="diff-buttons">
+          <button class="diff-btn easy" data-n="3">
+            <span class="diff-grid-icon">⬛</span>
+            <span class="diff-label">3×3</span>
+            <span class="diff-desc">ง่าย · +1,000</span>
+          </button>
+          <button class="diff-btn medium" data-n="4">
+            <span class="diff-grid-icon">🔲</span>
+            <span class="diff-label">4×4</span>
+            <span class="diff-desc">กลาง · +3,000</span>
+          </button>
+          <button class="diff-btn hard" data-n="5">
+            <span class="diff-grid-icon">🔳</span>
+            <span class="diff-label">5×5</span>
+            <span class="diff-desc">ยาก · +6,000</span>
+          </button>
+        </div>
+        <button class="back-diff" onclick="showSection('select-artwork')">← เลือกรูปใหม่</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 3: Playing -->
+  <div class="game-section" id="section-playing">
+    <div class="section-container">
+      <div class="game-hud">
+        <div class="hud-item">
+          <div class="hud-label">ภาพ</div>
+          <div class="hud-value" id="game-artwork-title" style="font-size:1rem;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
+        </div>
+        <div class="hud-sep"></div>
+        <div class="hud-item">
+          <div class="hud-label">ความยาก</div>
+          <div class="hud-value" id="game-diff-label"></div>
+        </div>
+        <div class="hud-sep"></div>
+        <div class="hud-item">
+          <div class="hud-label">เวลา</div>
+          <div class="hud-value" id="timer">00:00</div>
+        </div>
+        <div class="hud-sep"></div>
+        <div class="hud-item">
+          <div class="hud-label">การเคลื่อน</div>
+          <div class="hud-value" id="moves-count">0</div>
+        </div>
+      </div>
+      <div class="puzzle-wrapper">
+        <div id="puzzle-board"></div>
+      </div>
+      <p class="game-hint">✦ คลิกชิ้นแรก → คลิกชิ้นที่สอง เพื่อสลับตำแหน่ง</p>
+    </div>
+  </div>
+
+  <!-- SECTION 4: Result -->
+  <div class="game-section" id="section-result">
+    <div class="section-container">
+      <div class="result-box">
+        <div class="result-trophy">🏆</div>
+        <h2>ยอดเยี่ยม! เสร็จแล้ว</h2>
+        <div class="result-score-display" id="result-score">0</div>
+        <div class="result-stats">
+          <div class="result-stat">
+            <div class="result-stat-label">ภาพ</div>
+            <div class="result-stat-val" id="result-artwork" style="font-size:.85rem;"></div>
+          </div>
+          <div class="result-stat">
+            <div class="result-stat-label">ความยาก</div>
+            <div class="result-stat-val" id="result-diff"></div>
+          </div>
+          <div class="result-stat">
+            <div class="result-stat-label">เวลา</div>
+            <div class="result-stat-val" id="result-time"></div>
+          </div>
+          <div class="result-stat" style="grid-column: span 3;">
+            <div class="result-stat-label">จำนวนการเคลื่อน</div>
+            <div class="result-stat-val" id="result-moves"></div>
+          </div>
+        </div>
+        <div class="result-buttons">
+          <button class="btn-gold" id="view-leaderboard">🏅 ดูตารางคะแนน</button>
+          <button class="btn-outline" id="play-again">🔄 เล่นอีกครั้ง</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Login Modal in-game -->
+  <div class="login-modal" id="game-login-modal">
+    <div class="modal-backdrop"></div>
+    <div class="login-box">
+      <button class="login-modal-close" id="game-login-close">✕</button>
+      <div class="login-icon">🎮</div>
+      <h2>ใส่ชื่อผู้เล่น</h2>
+      <p>เพื่อบันทึกคะแนนของคุณ</p>
+      <form id="game-login-form">
+        <input
+          type="text"
+          class="login-input"
+          id="game-username-input"
+          placeholder="ชื่อผู้เล่น"
+          maxlength="20"
+          autocomplete="off"
+          required
+        >
+        <button type="submit" class="btn-gold">เริ่มเลย ✦</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="js/data.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Biw Art Gallery</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <nav>
+    <a href="index.html" class="nav-logo">Biw <span>Art Gallery</span></a>
+    <div class="nav-right">
+      <div id="nav-user"></div>
+      <button class="game-btn" id="game-btn">
+        <span>🎮</span> Mini Game
+      </button>
+    </div>
+  </nav>
+
+  <section class="hero">
+    <div class="hero-tag">Digital Art Collection 2026</div>
+    <h1>Biw Art Gallery</h1>
+    <p class="hero-sub">ผลงานศิลปะดิจิทัลที่ถ่ายทอดความงามและเรื่องราวจากจินตนาการ</p>
+    <div class="divider"></div>
+  </section>
+
+  <section class="gallery-section">
+    <div class="gallery-grid" id="gallery-grid"></div>
+  </section>
+
+  <footer>
+    <p>© 2026 <span>Biw Art Gallery</span> · All artworks by Biw</p>
+  </footer>
+
+  <!-- Artwork Modal -->
+  <div class="modal" id="artwork-modal">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="modal-img-side">
+        <img id="modal-img" src="" alt="">
+      </div>
+      <div class="modal-info-side">
+        <div class="modal-tag">✦ Original Artwork</div>
+        <h2 id="modal-title"></h2>
+        <p class="modal-title-en" id="modal-title-en"></p>
+        <p class="modal-meta" id="modal-meta"></p>
+        <p class="modal-story" id="modal-story"></p>
+      </div>
+      <button class="modal-close" id="modal-close">✕</button>
+    </div>
+  </div>
+
+  <!-- Login Modal -->
+  <div class="login-modal" id="login-modal">
+    <div class="modal-backdrop"></div>
+    <div class="login-box">
+      <button class="login-modal-close" id="login-close">✕</button>
+      <div class="login-icon">🎮</div>
+      <h2>เข้าสู่ระบบเพื่อเล่นเกม</h2>
+      <p>ใส่ชื่อของคุณเพื่อบันทึกคะแนน</p>
+      <form id="login-form">
+        <input
+          type="text"
+          class="login-input"
+          id="username-input"
+          placeholder="ชื่อผู้เล่น"
+          maxlength="20"
+          autocomplete="off"
+          required
+        >
+        <button type="submit" class="btn-gold">เริ่มเลย ✦</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="js/data.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/gallery.js"></script>
+</body>
+</html>
