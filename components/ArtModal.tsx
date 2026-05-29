@@ -22,34 +22,33 @@ export default function ArtModal({
 
   return (
     <div
-      className="fixed inset-0 z-[900] flex items-center justify-center p-5"
+      className="fixed inset-0 z-[900] flex items-center justify-center p-4 md:p-8"
       onClick={(e) => e.target === e.currentTarget && onClose()}
-      style={{ background: "rgba(0,0,0,.88)", backdropFilter: "blur(8px)" }}
+      style={{ background: "rgba(0,0,0,.92)", backdropFilter: "blur(8px)" }}
     >
       <div
-        className="relative w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl grid md:grid-cols-2"
+        className="relative w-full max-w-4xl max-h-[92vh] overflow-y-auto rounded-2xl flex flex-col"
         style={{
           background: "var(--color-bg3)",
           border: "1px solid rgba(212,168,67,.25)",
-          boxShadow: "0 24px 80px rgba(0,0,0,.7)",
+          boxShadow: "0 24px 80px rgba(0,0,0,.8)",
         }}
       >
-        {/* image */}
-        <div className="relative min-h-[260px]">
+        {/* image — full width, object-contain so nothing is cropped */}
+        <div className="relative w-full bg-black rounded-t-2xl" style={{ minHeight: "55vh" }}>
           <Image
             src={`/images/${art.file}`}
             alt={art.title}
             fill
-            className="object-cover rounded-t-2xl md:rounded-l-2xl md:rounded-tr-none"
-            sizes="(max-width:768px) 100vw, 50vw"
+            className="object-contain rounded-t-2xl"
+            sizes="(max-width:768px) 100vw, 896px"
+            priority
           />
         </div>
 
         {/* info */}
-        <div className="flex flex-col justify-center p-8 md:p-10">
-          <p className="text-gold text-xs tracking-[.2em] uppercase mb-3">
-            ✦ Original Artwork
-          </p>
+        <div className="flex flex-col px-8 py-6">
+          <p className="text-gold text-xs tracking-[.2em] uppercase mb-3">✦ Original Artwork</p>
           <h2
             className="text-2xl font-bold leading-tight mb-1 text-ink"
             style={{ fontFamily: "var(--font-serif)" }}

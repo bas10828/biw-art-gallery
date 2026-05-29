@@ -15,24 +15,31 @@ export default function GalleryPage() {
 
       {/* Hero */}
       <section className="relative flex flex-col items-center justify-center text-center pt-40 pb-20 px-6 overflow-hidden">
+        {/* Background image */}
+        <Image
+          src="/images/exhibition-trees.png"
+          alt=""
+          fill
+          className="object-cover object-center"
+          priority
+        />
+        {/* Dark overlay */}
         <div
-          className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[400px] pointer-events-none"
-          style={{
-            background: "radial-gradient(ellipse,rgba(212,168,67,.07) 0%,transparent 70%)",
-          }}
+          className="absolute inset-0 pointer-events-none"
+          style={{ background: "linear-gradient(to bottom, rgba(0,0,0,.72) 0%, rgba(0,0,0,.55) 60%, rgba(0,0,0,.85) 100%)" }}
         />
         <span
-          className="inline-block text-gold text-xs tracking-[.2em] uppercase border rounded-full px-4 py-1.5 mb-5"
+          className="relative inline-block text-gold text-xs tracking-[.2em] uppercase border rounded-full px-4 py-1.5 mb-5"
           style={{ borderColor: "rgba(212,168,67,.2)" }}
         >
-          Digital Art Collection 2026
+          khodseaw
         </span>
         <h1
-          className="font-bold leading-tight mb-4"
+          className="relative font-bold leading-tight mb-4"
           style={{
             fontFamily: "var(--font-serif)",
             fontSize: "clamp(2.5rem,6vw,4.5rem)",
-            background: "linear-gradient(135deg,var(--color-ink) 30%,var(--color-gold-light) 100%)",
+            background: "linear-gradient(135deg,#ffffff 30%,var(--color-gold-light) 100%)",
             WebkitBackgroundClip: "text",
             WebkitTextFillColor: "transparent",
             backgroundClip: "text",
@@ -40,11 +47,13 @@ export default function GalleryPage() {
         >
           Biw Art Gallery
         </h1>
-        <p className="text-ink2 font-light max-w-md">
-          ผลงานศิลปะดิจิทัลที่ถ่ายทอดความงามและเรื่องราวจากจินตนาการ
+        <p className="relative text-white/70 font-light max-w-md leading-relaxed">
+          ไม่ใช่ศิลปะเพื่อความสวยงาม<br />
+          มันคือแรงกระแทกในหัวใจ<br />
+          เสียงของเลือดที่กำลังเดือดปะทุอยู่ข้างใน
         </p>
         <div
-          className="w-16 h-px mt-10"
+          className="relative w-16 h-px mt-10"
           style={{
             background: "linear-gradient(90deg,transparent,var(--color-gold),transparent)",
           }}
