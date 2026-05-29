@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, useCallback } from "react";
+import Image from "next/image";
 import type { Artwork } from "@/lib/artworks";
 
 interface Props {
@@ -13,6 +14,7 @@ export default function JigsawGame({ artwork, n, onComplete }: Props) {
   const [moves, setMoves] = useState(0);
   const [elapsed, setElapsed] = useState(0);
   const [solved, setSolved] = useState(false);
+  const [solvedData, setSolvedData] = useState<{ time: number; moves: number; score: number } | null>(null);
   const [dragFrom, setDragFrom] = useState<number | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
   const startRef = useRef<number>(0);
@@ -36,6 +38,7 @@ export default function JigsawGame({ artwork, n, onComplete }: Props) {
     setMoves(0);
     setElapsed(0);
     setSolved(false);
+    setSolvedData(null);
     setDragFrom(null);
     setDragOver(null);
     startRef.current = Date.now();
@@ -58,7 +61,7 @@ export default function JigsawGame({ artwork, n, onComplete }: Props) {
         const finalMoves = moves + 1;
         const base: Record<number, number> = { 3: 1000, 4: 3000, 5: 6000 };
         const score = Math.max(50, (base[n] ?? 1000) - finalTime * 3 - finalMoves * 5);
-        setTimeout(() => onComplete(finalTime, finalMoves, score), 400);
+        setSolvedData({ time: finalTime, moves: finalMoves, score });
       }
       return next;
     });
@@ -184,6 +187,67 @@ export default function JigsawGame({ artwork, n, onComplete }: Props) {
       </div>
 
       <p className="text-ink3 text-xs">✦ ลากชิ้นส่วนเพื่อสลับตำแหน่ง</p>
+
+      {/* Solved reveal overlay */}
+      {solvedData && (
+        <div
+          className="fixed inset-0 z-[800] flex items-center justify-center p-4"
+          style={{
+            background: "rgba(0,0,0,.92)",
+            backdropFilter: "blur(12px)",
+            animation: "fadeIn .5s ease",
+          }}
+        >
+          <style>{`@keyframes fadeIn{from{opacity:0}to{opacity:1}} @keyframes scaleUp{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:scale(1)}}`}</style>
+          <div
+            className="flex flex-col items-center max-w-lg w-full"
+            style={{ animation: "scaleUp .6s ease" }}
+          >
+            {/* Full artwork */}
+            <div
+              className="relative w-full rounded-2xl overflow-hidden mb-6"
+              style={{
+                aspectRatio: "4/3",
+                boxShadow: "0 0 60px rgba(212,168,67,.35), 0 0 120px rgba(212,168,67,.1)",
+                border: "1px solid rgba(212,168,67,.4)",
+              }}
+            >
+              <Image
+                src={`/images/${artwork.file}`}
+                alt={artwork.title}
+                fill
+                className="object-contain"
+                sizes="512px"
+                priority
+              />
+            </div>
+
+            {/* Title */}
+            <p className="text-gold text-xs tracking-[.25em] uppercase mb-1">✦ ต่อสำเร็จ</p>
+            <h2
+              className="text-2xl font-bold text-white mb-1 text-center"
+              style={{ fontFamily: "var(--font-serif)" }}
+            >
+              {artwork.title}
+            </h2>
+            <p className="text-white/50 text-sm italic mb-6">{artwork.titleEn} · {artwork.year}</p>
+
+            <button
+              onClick={() => onComplete(solvedData.time, solvedData.moves, solvedData.score)}
+              className="px-8 py-3 rounded-full font-semibold text-sm transition-all duration-200"
+              style={{
+                background: "rgba(212,168,67,.15)",
+                color: "var(--color-gold-light)",
+                border: "1px solid rgba(212,168,67,.4)",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(212,168,67,.28)")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(212,168,67,.15)")}
+            >
+              ดูคะแนน →
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

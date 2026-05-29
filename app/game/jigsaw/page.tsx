@@ -17,6 +17,11 @@ interface Result {
   saved: boolean;
 }
 
+interface MiniBoard {
+  top3: { username: string; bestScore: number; bestTime: number }[];
+  myRank: number | null;
+}
+
 const DIFFICULTIES = [
   { n: 3, label: "3×3", desc: "9 ชิ้น · ง่าย" },
   { n: 4, label: "4×4", desc: "16 ชิ้น · ปานกลาง" },
@@ -33,6 +38,7 @@ export default function JigsawPage() {
   const [artwork, setArtwork] = useState<Artwork | null>(null);
   const [n, setN] = useState(3);
   const [result, setResult] = useState<Result | null>(null);
+  const [miniboard, setMiniboard] = useState<MiniBoard | null>(null);
   const [user, setUser] = useState<string | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [showAuth, setShowAuth] = useState(false);
@@ -79,6 +85,25 @@ export default function JigsawPage() {
       }
       setResult({ timeSec, moves, score, saved });
       setPhase("result");
+
+      // Fetch top 3 + player rank for this artwork + difficulty
+      if (artwork) {
+        try {
+          const params = new URLSearchParams({ artwork: artwork.file, difficulty: String(n) });
+          const boardRes = await fetch(`/api/scores/jigsaw?${params}`);
+          const board = boardRes.ok ? await boardRes.json() : [];
+          const top3 = board.slice(0, 3);
+
+          let myRank: number | null = null;
+          const stored2 = localStorage.getItem("biw_user");
+          const uname = stored2 ? JSON.parse(stored2).username : null;
+          if (uname) {
+            const rankRes = await fetch(`/api/scores/jigsaw?artwork=${artwork.file}&difficulty=${n}&rankFor=${uname}`);
+            if (rankRes.ok) { const d = await rankRes.json(); myRank = d.rank ?? null; }
+          }
+          setMiniboard({ top3, myRank });
+        } catch {}
+      }
     },
     [artwork, n]
   );
@@ -87,6 +112,7 @@ export default function JigsawPage() {
     setPhase("select-art");
     setArtwork(null);
     setResult(null);
+    setMiniboard(null);
   }
 
   function playAgain() {
@@ -253,6 +279,48 @@ export default function JigsawPage() {
                   </div>
                 ))}
               </div>
+
+              {/* Mini leaderboard */}
+              {miniboard && miniboard.top3.length > 0 && (
+                <div className="w-full max-w-xs mx-auto mb-6">
+                  <p className="text-[10px] tracking-[.2em] uppercase text-ink3 mb-3 text-center">
+                    อันดับ — {artwork.title} · {n}×{n}
+                  </p>
+                  <div
+                    className="rounded-xl overflow-hidden border"
+                    style={{ borderColor: "rgba(212,168,67,.15)" }}
+                  >
+                    {miniboard.top3.map((r, i) => {
+                      const isMe = r.username === user;
+                      return (
+                        <div
+                          key={i}
+                          className="flex items-center justify-between px-4 py-2.5 text-sm"
+                          style={{
+                            borderBottom: i < miniboard.top3.length - 1 ? "1px solid rgba(212,168,67,.07)" : "none",
+                            background: isMe ? "rgba(212,168,67,.08)" : i < 3 ? `rgba(212,168,67,${0.03 - i * 0.008})` : "transparent",
+                          }}
+                        >
+                          <span className="flex items-center gap-2">
+                            <span className="w-5 text-center">{["🥇","🥈","🥉"][i]}</span>
+                            <span className={`font-semibold truncate max-w-[100px] ${isMe ? "text-gold-light" : "text-ink"}`} style={{ fontFamily: "var(--font-serif)" }}>
+                              {r.username}{isMe ? " ★" : ""}
+                            </span>
+                          </span>
+                          <span className="font-bold tabular-nums" style={{ color: i === 0 ? "var(--color-gold-light)" : "var(--color-ink2)" }}>
+                            {r.bestScore.toLocaleString()}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {miniboard.myRank !== null && miniboard.myRank > 3 && (
+                    <p className="text-center text-xs text-gold mt-2">
+                      คุณอยู่อันดับที่ {miniboard.myRank}
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Save status */}
               {!user ? (

@@ -32,21 +32,63 @@ export async function POST(req: NextRequest) {
 // GET — leaderboard
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
+  const mode = searchParams.get("mode");
   const artworkFile = searchParams.get("artwork") ?? undefined;
   const difficulty = searchParams.get("difficulty") ?? undefined;
+  const rankFor = searchParams.get("rankFor") ?? undefined;
 
   try {
+    // Rank query: return rank of a specific user for a specific artwork+difficulty
+    if (rankFor && artworkFile && difficulty) {
+      const { rows } = await pool.query(
+        `SELECT (COUNT(*)::int + 1) AS rank
+         FROM (
+           SELECT username, MAX(score) AS best_score
+           FROM jigsaw_scores
+           WHERE artwork_file = $1 AND difficulty = $2
+           GROUP BY username
+         ) sub
+         WHERE best_score > COALESCE(
+           (SELECT MAX(score) FROM jigsaw_scores WHERE artwork_file = $1 AND difficulty = $2 AND username = $3),
+           0
+         )`,
+        [artworkFile, parseInt(difficulty), rankFor]
+      );
+      return NextResponse.json({ rank: rows[0]?.rank ?? 1 });
+    }
+
+    // Overall: sum all scores per user across all artworks
+    if (mode === "overall") {
+      const { rows } = await pool.query(`
+        SELECT username,
+               SUM(score)::int AS total_score,
+               COUNT(*)::int   AS plays
+        FROM jigsaw_scores
+        GROUP BY username
+        ORDER BY total_score DESC
+        LIMIT 100
+      `);
+      return NextResponse.json(rows.map((r) => ({
+        username: r.username,
+        totalScore: r.total_score,
+        plays: r.plays,
+      })));
+    }
+
+    // Per artwork / difficulty: best score per user per artwork+difficulty combo
     let query = `
       SELECT username, artwork_file, artwork_title, difficulty,
-             MAX(score) AS best_score, MIN(time_sec) AS best_time, COUNT(*) AS plays
+             MAX(score)::int    AS best_score,
+             MIN(time_sec)::int AS best_time,
+             COUNT(*)::int      AS plays
       FROM jigsaw_scores
     `;
     const params: (string | number)[] = [];
     const conditions: string[] = [];
     if (artworkFile) { params.push(artworkFile); conditions.push(`artwork_file=$${params.length}`); }
-    if (difficulty) { params.push(parseInt(difficulty)); conditions.push(`difficulty=$${params.length}`); }
+    if (difficulty)  { params.push(parseInt(difficulty)); conditions.push(`difficulty=$${params.length}`); }
     if (conditions.length) query += " WHERE " + conditions.join(" AND ");
-    query += " GROUP BY username, artwork_file, artwork_title, difficulty ORDER BY best_score DESC LIMIT 50";
+    query += " GROUP BY username, artwork_file, artwork_title, difficulty ORDER BY best_score DESC LIMIT 100";
 
     const { rows } = await pool.query(query, params);
     return NextResponse.json(rows.map((r) => ({
@@ -54,9 +96,9 @@ export async function GET(req: NextRequest) {
       artworkFile: r.artwork_file,
       artworkTitle: r.artwork_title,
       difficulty: r.difficulty,
-      bestScore: parseInt(r.best_score),
-      bestTime: parseInt(r.best_time),
-      plays: parseInt(r.plays),
+      bestScore: r.best_score,
+      bestTime: r.best_time,
+      plays: r.plays,
     })));
   } catch {
     return NextResponse.json({ error: "server error" }, { status: 500 });
