@@ -13,9 +13,15 @@ interface Props {
   onLeave: () => void;
 }
 
-const CELL_SIZE = 40;
 const GRID_W = 13;
 const GRID_H = 11;
+
+function calcCellSize(withControls: boolean) {
+  if (typeof window === "undefined") return 36;
+  const maxW = window.innerWidth;
+  const maxH = window.innerHeight - (withControls ? 130 : 48); // reserve HUD + controls
+  return Math.floor(Math.min(maxW / GRID_W, maxH / GRID_H));
+}
 const PLAYER_COLORS = ["#60a5fa", "#f87171", "#4ade80", "#c084fc"];
 const POWERUP_ART = ARTWORKS.slice(0, 3); // 3 artworks for 3 powerup types
 
@@ -26,15 +32,41 @@ const DIRS: Record<string, [number, number]> = {
 
 export default function BombermanGame({ initialState, room, myId, isSpectator, socket, onLeave }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const stateRef = useRef<GameState>(initialState);
   const explosionsRef = useRef<{ cells: { x: number; y: number }[]; timer: number }[]>([]);
   const [dead, setDead] = useState(false);
   const [winner, setWinner] = useState<{ id: string; name: string } | null | undefined>(undefined);
   const [suddenDeathCells, setSuddenDeathCells] = useState<{ x: number; y: number }[]>([]);
+  const [cellSize, setCellSize] = useState(36);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const animRef = useRef<number>(0);
   const keysRef = useRef<Set<string>>(new Set());
   const lastMoveRef = useRef<number>(0);
   const code = room.code;
+
+  // ── Responsive resize + fullscreen ──
+  useEffect(() => {
+    function updateSize() {
+      setCellSize(calcCellSize(!isSpectator && !dead));
+    }
+    updateSize();
+    window.addEventListener("resize", updateSize);
+    document.addEventListener("fullscreenchange", () => {
+      setIsFullscreen(!!document.fullscreenElement);
+      setTimeout(updateSize, 100);
+    });
+    return () => window.removeEventListener("resize", updateSize);
+  }, [isSpectator, dead]);
+
+  function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      containerRef.current?.requestFullscreen().catch(() => {});
+      (screen.orientation as any)?.lock?.("landscape").catch(() => {});
+    } else {
+      document.exitFullscreen();
+    }
+  }
 
   // ── Socket events ──
   useEffect(() => {
@@ -118,8 +150,9 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d")!;
-    const W = GRID_W * CELL_SIZE;
-    const H = GRID_H * CELL_SIZE;
+    const CS = cellSize;
+    const W = GRID_W * CS;
+    const H = GRID_H * CS;
     canvas.width = W;
     canvas.height = H;
 
@@ -134,27 +167,27 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
       // grid
       gs.map.forEach((row, y) => {
         row.forEach((cell, x) => {
-          const px = x * CELL_SIZE, py = y * CELL_SIZE;
+          const px = x * CS, py = y * CS;
           if (cell === 1) {
             // hard block
-            const g = ctx.createLinearGradient(px, py, px + CELL_SIZE, py + CELL_SIZE);
+            const g = ctx.createLinearGradient(px, py, px + CS, py + CS);
             g.addColorStop(0, "#1a1a2e"); g.addColorStop(1, "#0d0d1a");
             ctx.fillStyle = g;
-            ctx.fillRect(px, py, CELL_SIZE, CELL_SIZE);
+            ctx.fillRect(px, py, CS, CS);
             ctx.strokeStyle = "rgba(96,165,250,.15)";
-            ctx.strokeRect(px + 1, py + 1, CELL_SIZE - 2, CELL_SIZE - 2);
+            ctx.strokeRect(px + 1, py + 1, CS - 2, CS - 2);
           } else if (cell === 2) {
             // soft block
-            const g = ctx.createLinearGradient(px, py, px + CELL_SIZE, py + CELL_SIZE);
+            const g = ctx.createLinearGradient(px, py, px + CS, py + CS);
             g.addColorStop(0, "#2d1a0e"); g.addColorStop(1, "#1a0e07");
             ctx.fillStyle = g;
-            ctx.fillRect(px, py, CELL_SIZE, CELL_SIZE);
+            ctx.fillRect(px, py, CS, CS);
             ctx.strokeStyle = "rgba(212,168,67,.2)";
-            ctx.strokeRect(px + 2, py + 2, CELL_SIZE - 4, CELL_SIZE - 4);
+            ctx.strokeRect(px + 2, py + 2, CS - 4, CS - 4);
           } else {
             // empty floor
             ctx.fillStyle = (x + y) % 2 === 0 ? "#12121e" : "#0f0f1a";
-            ctx.fillRect(px, py, CELL_SIZE, CELL_SIZE);
+            ctx.fillRect(px, py, CS, CS);
           }
         });
       });
@@ -162,15 +195,15 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
       // sudden death flash
       suddenDeathCells.forEach(({ x, y }) => {
         ctx.fillStyle = "rgba(248,113,113,.5)";
-        ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+        ctx.fillRect(x * CS, y * CS, CS, CS);
       });
 
       // powerups (use artwork thumbnails as colored circles)
       gs.powerups?.forEach((pu) => {
-        const px = pu.x * CELL_SIZE + CELL_SIZE / 2, py = pu.y * CELL_SIZE + CELL_SIZE / 2;
+        const px = pu.x * CS + CS / 2, py = pu.y * CS + CS / 2;
         const color = pu.type === "range" ? "#f87171" : pu.type === "bombs" ? "#c084fc" : "#4ade80";
         ctx.beginPath();
-        ctx.arc(px, py, CELL_SIZE * 0.32, 0, Math.PI * 2);
+        ctx.arc(px, py, CS * 0.32, 0, Math.PI * 2);
         ctx.fillStyle = color + "33";
         ctx.fill();
         ctx.strokeStyle = color;
@@ -185,10 +218,10 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
 
       // bombs
       gs.bombs.forEach((bomb) => {
-        const px = bomb.x * CELL_SIZE + CELL_SIZE / 2, py = bomb.y * CELL_SIZE + CELL_SIZE / 2;
+        const px = bomb.x * CS + CS / 2, py = bomb.y * CS + CS / 2;
         const pulse = 0.85 + 0.15 * Math.sin(Date.now() / 150);
         ctx.beginPath();
-        ctx.arc(px, py, CELL_SIZE * 0.36 * pulse, 0, Math.PI * 2);
+        ctx.arc(px, py, CS * 0.36 * pulse, 0, Math.PI * 2);
         ctx.fillStyle = "#1a0a0a";
         ctx.fill();
         ctx.strokeStyle = "#f87171";
@@ -196,8 +229,8 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
         ctx.stroke();
         // fuse
         ctx.beginPath();
-        ctx.moveTo(px + 4, py - CELL_SIZE * 0.3);
-        ctx.quadraticCurveTo(px + 10, py - CELL_SIZE * 0.45, px + 6, py - CELL_SIZE * 0.5);
+        ctx.moveTo(px + 4, py - CS * 0.3);
+        ctx.quadraticCurveTo(px + 10, py - CS * 0.45, px + 6, py - CS * 0.5);
         ctx.strokeStyle = "#fbbf24";
         ctx.lineWidth = 2;
         ctx.stroke();
@@ -212,34 +245,34 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
       explosionsRef.current.forEach((exp) => {
         const alpha = exp.timer / 500;
         exp.cells.forEach(({ x, y }) => {
-          const px = x * CELL_SIZE, py = y * CELL_SIZE;
+          const px = x * CS, py = y * CS;
           const g = ctx.createRadialGradient(
-            px + CELL_SIZE / 2, py + CELL_SIZE / 2, 0,
-            px + CELL_SIZE / 2, py + CELL_SIZE / 2, CELL_SIZE * 0.7
+            px + CS / 2, py + CS / 2, 0,
+            px + CS / 2, py + CS / 2, CS * 0.7
           );
           g.addColorStop(0, `rgba(255,220,100,${alpha})`);
           g.addColorStop(0.5, `rgba(255,100,30,${alpha * 0.8})`);
           g.addColorStop(1, `rgba(200,50,10,0)`);
           ctx.fillStyle = g;
-          ctx.fillRect(px, py, CELL_SIZE, CELL_SIZE);
+          ctx.fillRect(px, py, CS, CS);
         });
       });
 
       // players
       Object.values(gs.players).forEach((p) => {
         if (!p.alive) return;
-        const px = p.x * CELL_SIZE + CELL_SIZE / 2, py = p.y * CELL_SIZE + CELL_SIZE / 2;
+        const px = p.x * CS + CS / 2, py = p.y * CS + CS / 2;
         const color = PLAYER_COLORS[p.slot];
         const isMe = p.id === myId;
         // glow
-        const glow = ctx.createRadialGradient(px, py, 0, px, py, CELL_SIZE * 0.6);
+        const glow = ctx.createRadialGradient(px, py, 0, px, py, CS * 0.6);
         glow.addColorStop(0, color + "44");
         glow.addColorStop(1, color + "00");
         ctx.fillStyle = glow;
-        ctx.beginPath(); ctx.arc(px, py, CELL_SIZE * 0.6, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(px, py, CS * 0.6, 0, Math.PI * 2); ctx.fill();
         // body
         ctx.beginPath();
-        ctx.arc(px, py, CELL_SIZE * 0.38, 0, Math.PI * 2);
+        ctx.arc(px, py, CS * 0.38, 0, Math.PI * 2);
         ctx.fillStyle = color + "22"; ctx.fill();
         ctx.strokeStyle = color; ctx.lineWidth = isMe ? 3 : 2; ctx.stroke();
         // spirit symbol
@@ -251,7 +284,7 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
         ctx.fillStyle = "#fff";
         ctx.font = "10px sans-serif";
         ctx.textAlign = "center";
-        ctx.fillText(p.name, px, py - CELL_SIZE * 0.55);
+        ctx.fillText(p.name, px, py - CS * 0.55);
       });
 
       animRef.current = requestAnimationFrame(draw);
@@ -259,37 +292,46 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
 
     animRef.current = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(animRef.current);
-  }, [myId, suddenDeathCells]);
+  }, [myId, suddenDeathCells, cellSize]);
 
-  const myPlayer = stateRef.current.players[myId];
-  const W = GRID_W * CELL_SIZE;
-  const H = GRID_H * CELL_SIZE;
+  const W = GRID_W * cellSize;
+  const H = GRID_H * cellSize;
 
   return (
     <div
+      ref={containerRef}
       className="fixed inset-0 flex flex-col items-center justify-center"
       style={{ background: "#0a0a0f" }}
     >
       {/* HUD */}
-      <div className="flex items-center justify-between w-full px-4 py-2 mb-2" style={{ maxWidth: W }}>
-        <div className="flex gap-3">
+      <div className="flex items-center justify-between w-full px-3 py-1 mb-1" style={{ maxWidth: W }}>
+        <div className="flex gap-2 flex-wrap">
           {Object.values(stateRef.current.players).map((p) => (
-            <div key={p.id} className="flex items-center gap-1.5 text-xs" style={{ color: PLAYER_COLORS[p.slot] }}>
+            <div key={p.id} className="flex items-center gap-1 text-xs" style={{ color: PLAYER_COLORS[p.slot] }}>
               <span style={{ opacity: p.alive ? 1 : 0.3 }}>✦</span>
               <span style={{ opacity: p.alive ? 1 : 0.3 }}>{p.name}</span>
             </div>
           ))}
         </div>
-        <button onClick={onLeave} className="text-xs text-ink3 hover:text-ink transition-colors">
-          {dead ? "ออก lobby" : isSpectator ? "ออก" : "ยอมแพ้"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={toggleFullscreen}
+            className="text-xs text-ink3 hover:text-ink transition-colors px-2 py-1 rounded"
+            style={{ background: "rgba(255,255,255,.06)" }}
+          >
+            {isFullscreen ? "⤓" : "⤢"}
+          </button>
+          <button onClick={onLeave} className="text-xs text-ink3 hover:text-ink transition-colors">
+            {dead ? "ออก" : isSpectator ? "ออก" : "ยอมแพ้"}
+          </button>
+        </div>
       </div>
 
       {/* Canvas */}
       <div className="relative">
         <canvas
           ref={canvasRef}
-          style={{ display: "block", imageRendering: "pixelated", borderRadius: "8px", border: "1px solid rgba(96,165,250,.1)" }}
+          style={{ display: "block", borderRadius: "6px", border: "1px solid rgba(96,165,250,.1)" }}
         />
         {/* Dead overlay */}
         {dead && winner === undefined && (
