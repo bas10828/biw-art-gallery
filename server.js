@@ -296,6 +296,58 @@ function isInBlastZone(gs, cx, cy) {
   return false;
 }
 
+// BFS: find first step toward nearest safe cell; returns dir string or null
+function bfsEscape(gs, sx, sy) {
+  const queue = [[sx, sy, null]]; // [x, y, firstDir]
+  const visited = new Set([`${sx},${sy}`]);
+  const DIRS4 = [['up',0,-1],['down',0,1],['left',-1,0],['right',1,0]];
+  while (queue.length) {
+    const [cx, cy, firstDir] = queue.shift();
+    if (!isInBlastZone(gs, cx, cy) && !(cx === sx && cy === sy)) return firstDir;
+    for (const [d, dx, dy] of DIRS4) {
+      const nx = cx+dx, ny = cy+dy;
+      const key = `${nx},${ny}`;
+      if (visited.has(key)) continue;
+      if (nx<0||ny<0||nx>=GRID_W||ny>=GRID_H) continue;
+      if (gs.map[ny][nx] !== CELL.EMPTY) continue;
+      if (gs.bombs.find(b=>b.x===nx&&b.y===ny)) continue;
+      visited.add(key);
+      queue.push([nx, ny, firstDir ?? d]);
+    }
+  }
+  return null;
+}
+
+// BFS: find first step toward target (tx,ty), avoiding blast zones
+function bfsChase(gs, sx, sy, tx, ty) {
+  const queue = [[sx, sy, null]];
+  const visited = new Set([`${sx},${sy}`]);
+  const DIRS4 = [['up',0,-1],['down',0,1],['left',-1,0],['right',1,0]];
+  while (queue.length) {
+    const [cx, cy, firstDir] = queue.shift();
+    if (cx === tx && cy === ty) return firstDir;
+    for (const [d, dx, dy] of DIRS4) {
+      const nx = cx+dx, ny = cy+dy;
+      const key = `${nx},${ny}`;
+      if (visited.has(key)) continue;
+      if (nx<0||ny<0||nx>=GRID_W||ny>=GRID_H) continue;
+      if (gs.map[ny][nx] !== CELL.EMPTY) continue;
+      if (gs.bombs.find(b=>b.x===nx&&b.y===ny)) continue;
+      if (isInBlastZone(gs, nx, ny)) continue;
+      visited.add(key);
+      queue.push([nx, ny, firstDir ?? d]);
+    }
+  }
+  return null;
+}
+
+// Check if bot can reach a safe cell after placing a hypothetical bomb
+function canEscapeAfterBomb(gs, bx, by, range) {
+  const fakeBomb = { x: bx, y: by, range };
+  const fakeGs = { ...gs, bombs: [...gs.bombs, fakeBomb] };
+  return bfsEscape(fakeGs, bx, by) !== null;
+}
+
 function startBotAI(room, io) {
   if (botTimers.has(room.code)) return;
   const timer = setInterval(() => {
@@ -304,54 +356,71 @@ function startBotAI(room, io) {
     const gs = r.gameState;
     Object.values(gs.players).forEach((p) => {
       if (!p.isBot || !p.alive) return;
-      const dirs = ['up', 'down', 'left', 'right'];
+
       const inDanger = isInBlastZone(gs, p.x, p.y);
 
-      // only place bomb if NOT in danger + enough escape routes
-      if (!inDanger && Math.random() < 0.08) {
-        const escapeDirs = dirs.filter((d) => {
-          const dx = d==='right'?1:d==='left'?-1:0, dy=d==='down'?1:d==='up'?-1:0;
-          const nx=p.x+dx, ny=p.y+dy;
-          return nx>=0&&ny>=0&&nx<GRID_W&&ny<GRID_H && gs.map[ny][nx]===CELL.EMPTY && !isInBlastZone(gs,nx,ny);
-        });
-        if (escapeDirs.length >= 2) {
+      // ── FLEE: escape blast zone using BFS ──
+      if (inDanger) {
+        const escDir = bfsEscape(gs, p.x, p.y);
+        if (escDir) movePlayer(gs, p.id, escDir);
+        io.to(r.code).emit('playerMoved', { playerId: p.id, x: p.x, y: p.y });
+        return; // flee first, do nothing else
+      }
+
+      // ── PLACE BOMB: only if BFS confirms escape after bomb ──
+      if (p.activeBombs < p.maxBombs && Math.random() < 0.12) {
+        // check adjacent soft blocks or players nearby — worth bombing?
+        const nearTarget = (() => {
+          const DIRS4 = [[0,-1],[0,1],[-1,0],[1,0]];
+          for (const [dx,dy] of DIRS4) {
+            for (let i=1; i<=p.range; i++) {
+              const nx=p.x+dx*i, ny=p.y+dy*i;
+              if (nx<0||ny<0||nx>=GRID_W||ny>=GRID_H) break;
+              if (gs.map[ny][nx]===CELL.HARD) break;
+              if (gs.map[ny][nx]===CELL.SOFT) return true;
+              // player in range?
+              if (Object.values(gs.players).some(q=>q.alive&&!q.isBot&&q.x===nx&&q.y===ny)) return true;
+            }
+          }
+          return false;
+        })();
+
+        if (nearTarget && canEscapeAfterBomb(gs, p.x, p.y, p.range)) {
           const bomb = placeBomb(gs, p.id);
-          if (bomb) io.to(r.code).emit('bombPlaced', { bomb, playerId: p.id });
+          if (bomb) {
+            io.to(r.code).emit('bombPlaced', { bomb, playerId: p.id });
+            // immediately start fleeing
+            const escDir = bfsEscape(gs, p.x, p.y);
+            if (escDir) movePlayer(gs, p.id, escDir);
+            io.to(r.code).emit('playerMoved', { playerId: p.id, x: p.x, y: p.y });
+            return;
+          }
         }
       }
 
-      // move: escape blast zone first, otherwise explore
-      let moved = false;
-      if (inDanger || isInBlastZone(gs, p.x, p.y)) {
-        const safeDirs = dirs.filter((d) => {
-          const dx=d==='right'?1:d==='left'?-1:0, dy=d==='down'?1:d==='up'?-1:0;
-          const nx=p.x+dx, ny=p.y+dy;
-          return nx>=0&&ny>=0&&nx<GRID_W&&ny<GRID_H && gs.map[ny][nx]===CELL.EMPTY &&
-            !gs.bombs.find((b)=>b.x===nx&&b.y===ny) && !isInBlastZone(gs,nx,ny);
-        });
-        if (safeDirs.length) {
-          moved = movePlayer(gs, p.id, safeDirs[Math.floor(Math.random()*safeDirs.length)]);
-        }
+      // ── CHASE nearest human player ──
+      const humans = Object.values(gs.players).filter(q => q.alive && !q.isBot);
+      let chased = false;
+      if (humans.length) {
+        // pick closest
+        const target = humans.reduce((a, b) =>
+          Math.abs(a.x-p.x)+Math.abs(a.y-p.y) < Math.abs(b.x-p.x)+Math.abs(b.y-p.y) ? a : b
+        );
+        const chaseDir = bfsChase(gs, p.x, p.y, target.x, target.y);
+        if (chaseDir) { movePlayer(gs, p.id, chaseDir); chased = true; }
       }
-      if (!moved) {
-        // prefer cells outside blast zones
-        const safeMovable = dirs.filter((d) => {
-          const dx=d==='right'?1:d==='left'?-1:0, dy=d==='down'?1:d==='up'?-1:0;
+
+      // ── WANDER if can't chase ──
+      if (!chased) {
+        const DIRS4 = [['up',0,-1],['down',0,1],['left',-1,0],['right',1,0]];
+        const safe = DIRS4.filter(([,dx,dy]) => {
           const nx=p.x+dx, ny=p.y+dy;
           return nx>=0&&ny>=0&&nx<GRID_W&&ny<GRID_H && gs.map[ny][nx]===CELL.EMPTY &&
-            !gs.bombs.find((b)=>b.x===nx&&b.y===ny) && !isInBlastZone(gs,nx,ny);
+            !gs.bombs.find(b=>b.x===nx&&b.y===ny) && !isInBlastZone(gs,nx,ny);
         });
-        const anyMovable = dirs.filter((d) => {
-          const dx=d==='right'?1:d==='left'?-1:0, dy=d==='down'?1:d==='up'?-1:0;
-          const nx=p.x+dx, ny=p.y+dy;
-          return nx>=0&&ny>=0&&nx<GRID_W&&ny<GRID_H && gs.map[ny][nx]===CELL.EMPTY &&
-            !gs.bombs.find((b)=>b.x===nx&&b.y===ny);
-        });
-        const candidates = safeMovable.length ? safeMovable : anyMovable;
-        if (candidates.length) {
-          movePlayer(gs, p.id, candidates[Math.floor(Math.random()*candidates.length)]);
-        }
+        if (safe.length) movePlayer(gs, p.id, safe[Math.floor(Math.random()*safe.length)][0]);
       }
+
       io.to(r.code).emit('playerMoved', { playerId: p.id, x: p.x, y: p.y });
     });
   }, BOT_TICK_MS);
