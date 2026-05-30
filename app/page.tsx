@@ -110,6 +110,63 @@ export default function GalleryPage() {
         </div>
       </section>
 
+      {/* About the Artist */}
+      <section className="max-w-5xl mx-auto px-6 pb-24">
+        <div
+          className="rounded-2xl overflow-hidden border flex flex-col md:flex-row"
+          style={{ borderColor: "rgba(212,168,67,.15)", background: "var(--color-bg3)" }}
+        >
+          {/* Image */}
+          <div className="relative w-full md:w-1/2 min-h-72">
+            <Image
+              src="/images/artist-gallery.png"
+              alt="Biw in her gallery"
+              fill
+              className="object-cover object-center"
+              sizes="(max-width:768px) 100vw, 50vw"
+            />
+            <div
+              className="absolute inset-0"
+              style={{ background: "linear-gradient(to right, transparent 60%, var(--color-bg3))" }}
+            />
+          </div>
+
+          {/* Text */}
+          <div className="flex flex-col justify-center px-8 py-10 md:w-1/2 gap-4">
+            <span
+              className="text-gold text-xs tracking-[.2em] uppercase border rounded-full px-4 py-1.5 self-start"
+              style={{ borderColor: "rgba(212,168,67,.2)" }}
+            >
+              ศิลปิน
+            </span>
+            <h2
+              className="font-bold leading-tight"
+              style={{
+                fontFamily: "var(--font-serif)",
+                fontSize: "clamp(1.5rem,3vw,2.2rem)",
+                background: "linear-gradient(135deg,#ffffff 30%,var(--color-gold-light) 100%)",
+                WebkitBackgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+                backgroundClip: "text",
+              }}
+            >
+              บิว โคตรเสียว
+            </h2>
+            <p className="text-ink2 text-sm leading-relaxed" style={{ fontFamily: "var(--font-serif)" }}>
+              อักษรวิจิตร หงษ์ตัน
+            </p>
+            <div
+              className="w-10 h-px"
+              style={{ background: "linear-gradient(90deg,var(--color-gold),transparent)" }}
+            />
+            <p className="text-ink2 text-sm leading-relaxed">
+              ศิลปินนักวาดภาพ Acrylic on Canvas ผู้สร้างโลกแฟนตาซีที่แฝงความรู้สึก
+              ลึกๆ ไว้ในสีสันและแสงของป่า ทะเล และสิ่งมีชีวิตที่ไม่มีชื่อ
+            </p>
+          </div>
+        </div>
+      </section>
+
       <Footer />
 
       {selected && <ArtModal art={selected} onClose={() => setSelected(null)} />}

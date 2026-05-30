@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import MerchPopup from "@/components/MerchPopup";
 
 export const metadata: Metadata = {
   title: "Biw Art Gallery",
@@ -9,7 +10,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="th">
-      <body>{children}</body>
+      <body>
+        {children}
+        <MerchPopup />
+      </body>
     </html>
   );
 }
