@@ -15,6 +15,15 @@ const GAMES = [
     href: "/game/jigsaw",
     difficulties: "3×3 · 4×4 · 5×5",
   },
+  {
+    id: "bomberman",
+    title: "ระเบิดโคตรเสียว",
+    titleTh: "ระเบิดโคตรเสียว",
+    desc: "วางระเบิดทำลายศัตรู เอาชีวิตรอดให้นานที่สุด สู้กัน 4 คน online",
+    icon: "💣",
+    href: "/bomberman",
+    difficulties: "2-4 ผู้เล่น · มีบอท · Online",
+  },
 ];
 
 export default function GameHubPage() {
