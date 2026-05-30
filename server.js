@@ -60,13 +60,15 @@ function makeCode() {
   return rooms.has(code) ? makeCode() : code;
 }
 
-function makeRoom(hostId, hostName) {
+function makeRoom(hostId, hostName, roomName) {
   const code = makeCode();
   const room = {
     code,
+    roomName: roomName || `ห้องของ ${hostName}`,
     hostId,
+    hostName,
     locked: false,
-    phase: 'lobby', // lobby | countdown | playing | ended
+    phase: 'lobby',
     players: [
       { id: hostId, name: hostName, slot: 0, ready: true, isBot: false, connected: true, reconnectTimer: null },
     ],
@@ -75,6 +77,21 @@ function makeRoom(hostId, hostName) {
   };
   rooms.set(code, room);
   return room;
+}
+
+function roomSummary(room) {
+  const bots = room.players.filter(p => p.isBot).length;
+  const humans = room.players.filter(p => !p.isBot).length;
+  return {
+    code: room.code,
+    roomName: room.roomName,
+    hostName: room.hostName,
+    playerCount: room.players.length,
+    humanCount: humans,
+    botCount: bots,
+    locked: room.locked,
+    phase: room.phase,
+  };
 }
 
 function roomInfo(room) {
@@ -439,14 +456,31 @@ async function saveWin(playerId, playerName, roomCode) {
 }
 
 // ── Socket.io handlers ─────────────────────────────────────────────────────
+function broadcastRoomList(socket) {
+  const list = [...rooms.values()]
+    .filter(r => !r.locked && r.phase === 'lobby')
+    .map(roomSummary);
+  socket.broadcast.emit('roomListUpdate', list);
+  socket.emit('roomListUpdate', list);
+}
+
 function setupSocket(io) {
   io.on('connection', (socket) => {
+    // LIST ROOMS
+    socket.on('listRooms', () => {
+      const list = [...rooms.values()]
+        .filter(r => !r.locked && r.phase === 'lobby')
+        .map(roomSummary);
+      socket.emit('roomList', list);
+    });
+
     // CREATE ROOM
-    socket.on('createRoom', ({ name }) => {
+    socket.on('createRoom', ({ name, roomName }) => {
       if (!name) return;
-      const room = makeRoom(socket.id, name);
+      const room = makeRoom(socket.id, name, roomName);
       socket.join(room.code);
       socket.emit('roomCreated', roomInfo(room));
+      broadcastRoomList(socket);
     });
 
     // JOIN ROOM
@@ -467,6 +501,7 @@ function setupSocket(io) {
       socket.join(room.code);
       socket.emit('roomJoined', roomInfo(room));
       io.to(room.code).emit('roomUpdated', roomInfo(room));
+      broadcastRoomList(socket);
     });
 
     // REJOIN (reconnect)
@@ -639,13 +674,15 @@ function handleLeave(socket, code, io) {
       rooms.delete(code);
       const lt = gameLoops.get(code); if (lt) { clearInterval(lt); gameLoops.delete(code); }
       const bt = botTimers.get(code); if (bt) { clearInterval(bt); botTimers.delete(code); }
+      broadcastRoomList(socket);
       return;
     }
     if (room.hostId === socket.id) {
       const nextHuman = room.players.find((p) => !p.isBot);
-      if (nextHuman) room.hostId = nextHuman.id;
+      if (nextHuman) { room.hostId = nextHuman.id; room.hostName = nextHuman.name; }
     }
     io.to(code).emit('roomUpdated', roomInfo(room));
+    broadcastRoomList(socket);
   }
 }
 
