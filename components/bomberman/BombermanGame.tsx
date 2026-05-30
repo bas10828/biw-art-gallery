@@ -316,10 +316,10 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
         <div className="flex items-center gap-2">
           <button
             onClick={toggleFullscreen}
-            className="text-xs text-ink3 hover:text-ink transition-colors px-2 py-1 rounded"
-            style={{ background: "rgba(255,255,255,.06)" }}
+            className="text-xs transition-colors px-2 py-1 rounded"
+            style={{ background: "rgba(255,255,255,.1)", color: "#fff" }}
           >
-            {isFullscreen ? "⤓" : "⤢"}
+            {isFullscreen ? "ออกเต็มจอ" : "เต็มจอ"}
           </button>
           <button onClick={onLeave} className="text-xs text-ink3 hover:text-ink transition-colors">
             {dead ? "ออก" : isSpectator ? "ออก" : "ยอมแพ้"}
