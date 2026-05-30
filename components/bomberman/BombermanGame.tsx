@@ -16,11 +16,13 @@ interface Props {
 const GRID_W = 13;
 const GRID_H = 11;
 
-function calcCellSize(withControls: boolean) {
+function calcCellSize(hasControls: boolean) {
   if (typeof window === "undefined") return 36;
-  const maxW = window.innerWidth;
-  const maxH = window.innerHeight - (withControls ? 130 : 48); // reserve HUD + controls
-  return Math.floor(Math.min(maxW / GRID_W, maxH / GRID_H));
+  const HUD = 36;
+  // controls (DPad+BombBtn) are side-by-side with canvas, reserve ~220px width total
+  const maxW = window.innerWidth - (hasControls ? 220 : 0);
+  const maxH = window.innerHeight - HUD;
+  return Math.max(20, Math.floor(Math.min(maxW / GRID_W, maxH / GRID_H)));
 }
 const PLAYER_COLORS = ["#60a5fa", "#f87171", "#4ade80", "#c084fc"];
 const POWERUP_ART = ARTWORKS.slice(0, 3); // 3 artworks for 3 powerup types
@@ -40,23 +42,43 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
   const [suddenDeathCells, setSuddenDeathCells] = useState<{ x: number; y: number }[]>([]);
   const [cellSize, setCellSize] = useState(36);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isPortrait, setIsPortrait] = useState(false);
   const animRef = useRef<number>(0);
   const keysRef = useRef<Set<string>>(new Set());
   const lastMoveRef = useRef<number>(0);
   const code = room.code;
 
-  // ── Responsive resize + fullscreen ──
+  // ── Auto fullscreen on mount ──
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    el.requestFullscreen?.().then(() => {
+      (screen.orientation as any)?.lock?.("landscape").catch(() => {});
+    }).catch(() => {});
+    return () => {
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+      (screen.orientation as any)?.unlock?.();
+    };
+  }, []);
+
+  // ── Responsive resize + fullscreen + orientation ──
   useEffect(() => {
     function updateSize() {
-      setCellSize(calcCellSize(!isSpectator && !dead));
+      const portrait = window.innerHeight > window.innerWidth;
+      setIsPortrait(portrait);
+      if (!portrait) setCellSize(calcCellSize(!isSpectator && !dead));
     }
     updateSize();
     window.addEventListener("resize", updateSize);
+    window.addEventListener("orientationchange", () => setTimeout(updateSize, 150));
     document.addEventListener("fullscreenchange", () => {
       setIsFullscreen(!!document.fullscreenElement);
-      setTimeout(updateSize, 100);
+      setTimeout(updateSize, 150);
     });
-    return () => window.removeEventListener("resize", updateSize);
+    return () => {
+      window.removeEventListener("resize", updateSize);
+      window.removeEventListener("orientationchange", updateSize);
+    };
   }, [isSpectator, dead]);
 
   function toggleFullscreen() {
@@ -296,6 +318,7 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
 
   const W = GRID_W * cellSize;
   const H = GRID_H * cellSize;
+  const showControls = !isSpectator && !dead;
 
   return (
     <div
@@ -303,8 +326,19 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
       className="fixed inset-0 flex flex-col items-center justify-center"
       style={{ background: "#0a0a0f" }}
     >
+      {/* Portrait overlay — rotate prompt */}
+      {isPortrait && (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-4"
+          style={{ background: "#0a0a0f" }}>
+          <div style={{ fontSize: "3rem", animation: "spin90 1.2s ease-in-out infinite alternate" }}>📱</div>
+          <p className="text-ink text-sm">หมุนโทรศัพท์เป็นแนวนอน</p>
+          <button onClick={onLeave} className="text-xs text-ink3 hover:text-gold mt-4">ออกจากเกม</button>
+          <style>{`@keyframes spin90{from{transform:rotate(0deg)}to{transform:rotate(90deg)}}`}</style>
+        </div>
+      )}
+
       {/* HUD */}
-      <div className="flex items-center justify-between w-full px-3 py-1 mb-1" style={{ maxWidth: W }}>
+      <div className="flex items-center justify-between w-full px-3 py-1 mb-1 shrink-0" style={{ maxWidth: W + (showControls ? 220 : 0) }}>
         <div className="flex gap-2 flex-wrap">
           {Object.values(stateRef.current.players).map((p) => (
             <div key={p.id} className="flex items-center gap-1 text-xs" style={{ color: PLAYER_COLORS[p.slot] }}>
@@ -314,11 +348,8 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
           ))}
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={toggleFullscreen}
-            className="text-xs transition-colors px-2 py-1 rounded"
-            style={{ background: "rgba(255,255,255,.1)", color: "#fff" }}
-          >
+          <button onClick={toggleFullscreen} className="text-xs px-2 py-1 rounded"
+            style={{ background: "rgba(255,255,255,.1)", color: "#fff" }}>
             {isFullscreen ? "ออกเต็มจอ" : "เต็มจอ"}
           </button>
           <button onClick={onLeave} className="text-xs text-ink3 hover:text-ink transition-colors">
@@ -327,77 +358,61 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
         </div>
       </div>
 
-      {/* Canvas */}
-      <div className="relative">
-        <canvas
-          ref={canvasRef}
-          style={{ display: "block", borderRadius: "6px", border: "1px solid rgba(96,165,250,.1)" }}
-        />
-        {/* Dead overlay */}
-        {dead && winner === undefined && (
-          <div className="absolute inset-0 flex items-center justify-center rounded-lg" style={{ background: "rgba(0,0,0,.6)" }}>
-            <div className="text-center">
-              <p className="text-red-400 font-bold text-xl mb-2">ตายแล้ว</p>
-              <p className="text-ink2 text-xs mb-4">กำลัง spectate...</p>
-              <button onClick={onLeave} className="text-xs text-gold hover:underline">ออก lobby</button>
+      {/* Game area: D-pad | Canvas | Bomb */}
+      <div className="flex items-center justify-center gap-3">
+        {/* Left D-pad */}
+        {showControls && (
+          <DPad onMove={(dir) => socket.emit("move", { code, dir })} />
+        )}
+
+        {/* Canvas */}
+        <div className="relative shrink-0">
+          <canvas ref={canvasRef}
+            style={{ display: "block", borderRadius: "6px", border: "1px solid rgba(96,165,250,.1)" }} />
+          {dead && winner === undefined && (
+            <div className="absolute inset-0 flex items-center justify-center rounded-lg" style={{ background: "rgba(0,0,0,.65)" }}>
+              <div className="text-center">
+                <p className="text-red-400 font-bold text-lg mb-2">ตายแล้ว</p>
+                <p className="text-ink2 text-xs mb-3">กำลัง spectate...</p>
+                <button onClick={onLeave} className="text-xs text-gold hover:underline">ออก</button>
+              </div>
             </div>
-          </div>
+          )}
+        </div>
+
+        {/* Right Bomb button */}
+        {showControls && (
+          <BombButton onBomb={() => socket.emit("placeBomb", { code })} />
         )}
       </div>
-
-      {/* Mobile controls */}
-      {!isSpectator && !dead && (
-        <MobileControls
-          onMove={(dir) => socket.emit("move", { code, dir })}
-          onBomb={() => socket.emit("placeBomb", { code })}
-        />
-      )}
     </div>
   );
 }
 
-// ── Mobile D-pad ──
-function MobileControls({ onMove, onBomb }: { onMove: (dir: string) => void; onBomb: () => void }) {
-  const holdRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  function startMove(dir: string) {
-    onMove(dir);
-    holdRef.current = setInterval(() => onMove(dir), 160);
-  }
-  function stopMove() {
-    if (holdRef.current) { clearInterval(holdRef.current); holdRef.current = null; }
-  }
-
-  const btnClass = "w-12 h-12 rounded-xl flex items-center justify-center text-lg font-bold select-none active:scale-90 transition-transform";
-  const btnStyle = { background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.12)", color: "white", touchAction: "none" as const };
-
+// ── D-pad (left side) ──
+function DPad({ onMove }: { onMove: (dir: string) => void }) {
+  const S = 52;
+  const btn = (dir: string, label: string) => (
+    <button
+      style={{ width: S, height: S, background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.15)", borderRadius: 10, color: "#fff", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center", touchAction: "none", userSelect: "none" }}
+      onPointerDown={(e) => { e.preventDefault(); onMove(dir); }}
+    >{label}</button>
+  );
   return (
-    <div className="flex items-center gap-10 mt-3 px-4">
-      {/* D-pad */}
-      <div className="grid grid-cols-3 gap-1" style={{ width: 160 }}>
-        <div />
-        <button className={btnClass} style={btnStyle}
-          onTouchStart={() => startMove("up")} onTouchEnd={stopMove} onMouseDown={() => startMove("up")} onMouseUp={stopMove}>▲</button>
-        <div />
-        <button className={btnClass} style={btnStyle}
-          onTouchStart={() => startMove("left")} onTouchEnd={stopMove} onMouseDown={() => startMove("left")} onMouseUp={stopMove}>◀</button>
-        <div className="w-12 h-12 rounded-xl" style={{ background: "rgba(0,0,0,.3)" }} />
-        <button className={btnClass} style={btnStyle}
-          onTouchStart={() => startMove("right")} onTouchEnd={stopMove} onMouseDown={() => startMove("right")} onMouseUp={stopMove}>▶</button>
-        <div />
-        <button className={btnClass} style={btnStyle}
-          onTouchStart={() => startMove("down")} onTouchEnd={stopMove} onMouseDown={() => startMove("down")} onMouseUp={stopMove}>▼</button>
-        <div />
-      </div>
-      {/* Bomb */}
-      <button
-        className="w-16 h-16 rounded-full flex items-center justify-center text-2xl select-none active:scale-90 transition-transform"
-        style={{ background: "rgba(248,113,113,.2)", border: "2px solid rgba(248,113,113,.5)", touchAction: "none" }}
-        onTouchStart={(e) => { e.preventDefault(); onBomb(); }}
-        onClick={onBomb}
-      >
-        💣
-      </button>
+    <div style={{ display: "grid", gridTemplateColumns: `repeat(3,${S}px)`, gap: 4 }}>
+      <div />{btn("up", "▲")}<div />
+      {btn("left", "◀")}<div style={{ width: S, height: S, background: "rgba(0,0,0,.2)", borderRadius: 10 }} />{btn("right", "▶")}
+      <div />{btn("down", "▼")}<div />
     </div>
+  );
+}
+
+// ── Bomb button (right side) ──
+function BombButton({ onBomb }: { onBomb: () => void }) {
+  return (
+    <button
+      style={{ width: 70, height: 70, borderRadius: "50%", background: "rgba(248,113,113,.25)", border: "2px solid rgba(248,113,113,.6)", fontSize: 28, display: "flex", alignItems: "center", justifyContent: "center", touchAction: "none", userSelect: "none" }}
+      onPointerDown={(e) => { e.preventDefault(); onBomb(); }}
+    >💣</button>
   );
 }
