@@ -11,6 +11,7 @@ interface Props {
   isSpectator: boolean;
   socket: Socket;
   onLeave: () => void;
+  onGameOver: (winner: { id: string; name: string } | null, stats: any[]) => void;
 }
 
 const GRID_W = 13;
@@ -32,11 +33,13 @@ const DIRS: Record<string, [number, number]> = {
   KeyW: [0, -1], KeyS: [0, 1], KeyA: [-1, 0], KeyD: [1, 0],
 };
 
-export default function BombermanGame({ initialState, room, myId, isSpectator, socket, onLeave }: Props) {
+export default function BombermanGame({ initialState, room, myId, isSpectator, socket, onLeave, onGameOver }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const stateRef = useRef<GameState>(initialState);
   const explosionsRef = useRef<{ cells: { x: number; y: number }[]; timer: number }[]>([]);
+  const onGameOverRef = useRef(onGameOver);
+  onGameOverRef.current = onGameOver;
   const [dead, setDead] = useState(false);
   const [winner, setWinner] = useState<{ id: string; name: string } | null | undefined>(undefined);
   const [toast, setToast] = useState<string | null>(null);
@@ -225,7 +228,10 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
       if (stateRef.current.players[playerId]) stateRef.current.players[playerId].alive = false;
       if (playerId === myId) setDead(true);
     };
-    const onGameOver = ({ winner: w }: any) => setWinner(w ?? null);
+    const handleGameOver = ({ winner: w, stats }: any) => {
+      setWinner(w ?? null);
+      onGameOverRef.current(w ?? null, stats ?? []);
+    };
     const onPowerupCollected = ({ x, y, type }: { x: number; y: number; type: string }) => {
       const color = type === "range" ? "#f87171" : type === "bombs" ? "#c084fc" : type === "wallbreak" ? "#d4a843" : "#4ade80";
       for (let i = 0; i < 12; i++) {
@@ -253,7 +259,7 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
     socket.on("mapUpdate", onMapUpdate);
     socket.on("powerupsUpdate", onPowerupsUpdate);
     socket.on("playerDied", onPlayerDied);
-    socket.on("gameOver", onGameOver);
+    socket.on("gameOver", handleGameOver);
     socket.on("powerupCollected", onPowerupCollected);
     socket.on("wallbreakUsed", onWallbreakUsed);
     socket.on("suddenDeath", onSuddenDeath);
@@ -265,7 +271,7 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
       socket.off("mapUpdate", onMapUpdate);
       socket.off("powerupsUpdate", onPowerupsUpdate);
       socket.off("playerDied", onPlayerDied);
-      socket.off("gameOver", onGameOver);
+      socket.off("gameOver", handleGameOver);
       socket.off("powerupCollected", onPowerupCollected);
       socket.off("wallbreakUsed", onWallbreakUsed);
       socket.off("suddenDeath", onSuddenDeath);

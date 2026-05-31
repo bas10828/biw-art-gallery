@@ -71,12 +71,6 @@ export default function RoomPage() {
       setPhase("playing");
     });
 
-    s.on("gameOver", ({ winner: w, stats }: any) => {
-      setWinner(w);
-      if (stats) setGameStats(stats);
-      setPhase("ended");
-    });
-
     s.on("rematch", (r: RoomInfo) => {
       setRoom(r);
       setGameData(null);
@@ -90,7 +84,7 @@ export default function RoomPage() {
 
     return () => {
       s.off("roomJoined"); s.off("roomUpdated"); s.off("joinError");
-      s.off("countdown"); s.off("gameStarted"); s.off("gameOver");
+      s.off("countdown"); s.off("gameStarted");
       s.off("rematch"); s.off("playerDisconnected"); s.off("connect");
     };
   }, [code, name, isSpectator]);
@@ -146,6 +140,11 @@ export default function RoomPage() {
         isSpectator={isSpectator}
         socket={socketRef.current!}
         onLeave={leaveRoom}
+        onGameOver={(w, stats) => {
+          setWinner(w);
+          if (stats) setGameStats(stats);
+          setPhase("ended");
+        }}
       />
     );
   }
