@@ -53,7 +53,7 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
   const code = room.code;
 
   // ── Smooth movement: per-player tween data ──
-  type Tween = { srcX: number; srcY: number; dstX: number; dstY: number; startMs: number };
+  type Tween = { srcX: number; srcY: number; dstX: number; dstY: number; startMs: number; dur: number };
   const tweens = useRef<Map<string, Tween>>(new Map());
 
   // ── Particle system ──
@@ -63,6 +63,9 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
   // ── Screen shake ──
   const shakeRef = useRef({ until: 0 });
   const lastFrameMs = useRef(0);
+
+  // ── Client-side prediction for local player ──
+  const myPredPos = useRef({ x: 0, y: 0, init: false });
 
   // ── Speed trail: last N display positions per player ──
   type TrailPt = { x: number; y: number; t: number };
@@ -137,8 +140,16 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
       const ease = t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
       const curX = prev ? prev.srcX + (prev.dstX - prev.srcX) * ease : p.x;
       const curY = prev ? prev.srcY + (prev.dstY - prev.srcY) * ease : p.y;
-      tweens.current.set(playerId, { srcX: curX, srcY: curY, dstX: x, dstY: y, startMs: Date.now() });
+      tweens.current.set(playerId, { srcX: curX, srcY: curY, dstX: x, dstY: y, startMs: Date.now(), dur: currentMoveInterval.current });
       p.x = x; p.y = y;
+      // reconcile client prediction for local player
+      if (playerId === myId) {
+        const mp = myPredPos.current;
+        if (!mp.init) { mp.x = x; mp.y = y; mp.init = true; }
+        else if (Math.abs(mp.x - x) > 1.5 || Math.abs(mp.y - y) > 1.5) {
+          mp.x = x; mp.y = y; // snap on large discrepancy
+        }
+      }
     });
     socket.on("bombPlaced", ({ bomb }: any) => {
       stateRef.current.bombs = [...stateRef.current.bombs, bomb];
@@ -248,6 +259,8 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
   }, [isSpectator, dead, code, socket]);
 
   const joystickDirRef = useRef<string | null>(null);
+  const prevJoystickDir = useRef<string | null>(null);
+  const currentMoveInterval = useRef(130);
 
   // ── Move loop — speed-aware ──
   useEffect(() => {
@@ -255,9 +268,9 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
     const interval = setInterval(() => {
       const now = Date.now();
       const speed = stateRef.current.players[myId]?.speed ?? 1;
-      const moveInterval = Math.max(80, Math.round(160 / speed));
+      const moveInterval = Math.max(60, Math.round(100 / speed));
+      currentMoveInterval.current = moveInterval;
       if (now - lastMoveRef.current < moveInterval) return;
-      // joystick takes priority over keyboard
       const dir = joystickDirRef.current
         ?? (() => {
           for (const [key, [dx, dy]] of Object.entries(DIRS)) {
@@ -267,7 +280,7 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
           return null;
         })();
       if (dir) { socket.emit("move", { code, dir }); lastMoveRef.current = now; }
-    }, 40);
+    }, 30);
     return () => clearInterval(interval);
   }, [isSpectator, dead, code, socket, myId]);
 
@@ -283,9 +296,13 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
     canvas.height = H;
 
     function getDispPos(p: { id: string; x: number; y: number }) {
+      if (p.id === myId && myPredPos.current.init) {
+        return { x: myPredPos.current.x, y: myPredPos.current.y };
+      }
       const tw = tweens.current.get(p.id);
       if (!tw) return { x: p.x, y: p.y };
-      const t = Math.min(1, (Date.now() - tw.startMs) / 160);
+      const dur = tw.dur ?? 130;
+      const t = Math.min(1, (Date.now() - tw.startMs) / dur);
       const e = t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
       return { x: tw.srcX + (tw.dstX - tw.srcX) * e, y: tw.srcY + (tw.dstY - tw.srcY) * e };
     }
@@ -306,36 +323,91 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
 
       ctx.clearRect(0, 0, W, H);
 
-      // background
-      ctx.fillStyle = "#0a0a0f";
-      ctx.fillRect(0, 0, W, H);
+      // ── background — dark radial vignette ──
+      const bgGrad = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W,H)*0.75);
+      bgGrad.addColorStop(0, "#13121f"); bgGrad.addColorStop(1, "#080810");
+      ctx.fillStyle = bgGrad; ctx.fillRect(0, 0, W, H);
 
-      // grid
+      // ── grid ──
       gs.map.forEach((row, y) => {
         row.forEach((cell, x) => {
           const px = x * CS, py = y * CS;
+
           if (cell === 1) {
-            // hard block
-            const g = ctx.createLinearGradient(px, py, px + CS, py + CS);
-            g.addColorStop(0, "#1a1a2e"); g.addColorStop(1, "#0d0d1a");
-            ctx.fillStyle = g;
-            ctx.fillRect(px, py, CS, CS);
-            ctx.strokeStyle = "rgba(96,165,250,.15)";
-            ctx.strokeRect(px + 1, py + 1, CS - 2, CS - 2);
+            // hard block — dark marble + gold trim
+            const g = ctx.createLinearGradient(px, py, px+CS, py+CS);
+            g.addColorStop(0, "#18182a"); g.addColorStop(1, "#0c0c18");
+            ctx.fillStyle = g; ctx.fillRect(px, py, CS, CS);
+            // top/left highlight bevel
+            ctx.fillStyle = "rgba(255,255,255,0.05)";
+            ctx.fillRect(px, py, CS, CS*0.08);
+            ctx.fillRect(px, py, CS*0.07, CS);
+            // bottom/right shadow
+            ctx.fillStyle = "rgba(0,0,0,0.35)";
+            ctx.fillRect(px, py+CS*0.92, CS, CS*0.08);
+            ctx.fillRect(px+CS*0.93, py, CS*0.07, CS);
+            // gold outer border
+            ctx.strokeStyle = "rgba(212,168,67,0.3)"; ctx.lineWidth = 1.5;
+            ctx.strokeRect(px+0.75, py+0.75, CS-1.5, CS-1.5);
+            // etched X pattern
+            ctx.beginPath();
+            ctx.moveTo(px+CS*0.28, py+CS*0.28); ctx.lineTo(px+CS*0.72, py+CS*0.72);
+            ctx.moveTo(px+CS*0.72, py+CS*0.28); ctx.lineTo(px+CS*0.28, py+CS*0.72);
+            ctx.strokeStyle = "rgba(212,168,67,0.12)"; ctx.lineWidth = 0.8; ctx.stroke();
+
           } else if (cell === 2) {
-            // soft block
-            const g = ctx.createLinearGradient(px, py, px + CS, py + CS);
-            g.addColorStop(0, "#2d1a0e"); g.addColorStop(1, "#1a0e07");
-            ctx.fillStyle = g;
-            ctx.fillRect(px, py, CS, CS);
-            ctx.strokeStyle = "rgba(212,168,67,.2)";
-            ctx.strokeRect(px + 2, py + 2, CS - 4, CS - 4);
+            // soft block — dark crate, gold rope X
+            const g = ctx.createLinearGradient(px, py, px+CS, py+CS);
+            g.addColorStop(0, "#221508"); g.addColorStop(1, "#140d04");
+            ctx.fillStyle = g; ctx.fillRect(px, py, CS, CS);
+            // plank lines
+            ctx.fillStyle = "rgba(0,0,0,0.25)";
+            ctx.fillRect(px, py+CS/3-0.5, CS, 1);
+            ctx.fillRect(px, py+CS*2/3-0.5, CS, 1);
+            // vertical center seam
+            ctx.fillRect(px+CS/2-0.5, py, 1, CS);
+            // gold rope X
+            ctx.beginPath();
+            ctx.moveTo(px+CS*0.15, py+CS*0.15); ctx.lineTo(px+CS*0.85, py+CS*0.85);
+            ctx.moveTo(px+CS*0.85, py+CS*0.15); ctx.lineTo(px+CS*0.15, py+CS*0.85);
+            ctx.strokeStyle = "rgba(212,168,67,0.4)"; ctx.lineWidth = 1.2; ctx.stroke();
+            // corner nails
+            [[0.12,0.12],[0.88,0.12],[0.12,0.88],[0.88,0.88]].forEach(([nx,ny]) => {
+              ctx.beginPath(); ctx.arc(px+nx*CS, py+ny*CS, CS*0.04, 0, Math.PI*2);
+              ctx.fillStyle = "rgba(212,168,67,0.55)"; ctx.fill();
+            });
+            // outer border
+            ctx.strokeStyle = "rgba(212,168,67,0.25)"; ctx.lineWidth = 1;
+            ctx.strokeRect(px+1, py+1, CS-2, CS-2);
+
           } else {
-            // empty floor
-            ctx.fillStyle = (x + y) % 2 === 0 ? "#12121e" : "#0f0f1a";
+            // floor — dark tile with subtle gold grid
+            ctx.fillStyle = (x+y)%2===0 ? "#0f0f1c" : "#0d0d18";
             ctx.fillRect(px, py, CS, CS);
+            // subtle gold tile lines
+            ctx.strokeStyle = "rgba(212,168,67,0.05)"; ctx.lineWidth = 0.5;
+            ctx.strokeRect(px, py, CS, CS);
+            // occasional ✦ accent
+            if ((x*3 + y*7) % 17 === 0) {
+              ctx.fillStyle = "rgba(212,168,67,0.07)";
+              ctx.font = `${CS*0.28}px sans-serif`;
+              ctx.textAlign = "center"; ctx.textBaseline = "middle";
+              ctx.fillText("✦", px+CS/2, py+CS/2);
+            }
           }
         });
+      });
+
+      // ── canvas gold border frame ──
+      ctx.strokeStyle = "rgba(212,168,67,0.35)"; ctx.lineWidth = 2;
+      ctx.strokeRect(1, 1, W-2, H-2);
+      // corner ornaments
+      [[0,0],[W,0],[0,H],[W,H]].forEach(([ox,oy]) => {
+        const sx = ox===0?1:W-1, sy = oy===0?1:H-1;
+        const dx = ox===0?1:-1, dy = oy===0?1:-1;
+        ctx.beginPath();
+        ctx.moveTo(sx+dx*CS*0.4, sy); ctx.lineTo(sx, sy); ctx.lineTo(sx, sy+dy*CS*0.4);
+        ctx.strokeStyle = "rgba(212,168,67,0.6)"; ctx.lineWidth = 2.5; ctx.stroke();
       });
 
       // sudden death flash
@@ -490,6 +562,38 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
         });
       });
 
+      // ── update client-side predicted position for local player ──
+      if (!dead && !isSpectator) {
+        const myP = gs.players[myId];
+        if (myP?.alive) {
+          const mp = myPredPos.current;
+          if (!mp.init) { mp.x = myP.x; mp.y = myP.y; mp.init = true; }
+          const dir = joystickDirRef.current
+            ?? (() => { for (const [k,[kdx,kdy]] of Object.entries(DIRS)) { if (keysRef.current.has(k)) return kdx===1?"right":kdx===-1?"left":kdy===1?"down":"up"; } return null; })();
+          if (dir) {
+            const spd = (myP.speed ?? 1) / currentMoveInterval.current; // cells/ms
+            const ddx = dir==="right"?1:dir==="left"?-1:0;
+            const ddy = dir==="down"?1:dir==="up"?-1:0;
+            const nx = mp.x + ddx * spd * dt;
+            const ny = mp.y + ddy * spd * dt;
+            // wall check: peek 0.45 cells ahead in direction
+            const gcx = Math.floor(nx + ddx*0.45), gcy = Math.floor(ny + ddy*0.45);
+            const passable = gcx>=0&&gcy>=0&&gcx<GRID_W&&gcy<GRID_H
+              && gs.map[gcy][gcx]===0 && !gs.bombs.some((b:any)=>b.x===gcx&&b.y===gcy);
+            if (passable || (Math.floor(nx)===Math.floor(mp.x) && Math.floor(ny)===Math.floor(mp.y))) {
+              mp.x = nx; mp.y = ny;
+            }
+            // clamp: don't run more than 0.9 cells ahead of server
+            mp.x = Math.max(myP.x-0.9, Math.min(myP.x+0.9, mp.x));
+            mp.y = Math.max(myP.y-0.9, Math.min(myP.y+0.9, mp.y));
+          } else {
+            // settle toward server position when not moving
+            mp.x += (myP.x - mp.x) * Math.min(1, dt * 0.018);
+            mp.y += (myP.y - mp.y) * Math.min(1, dt * 0.018);
+          }
+        }
+      }
+
       // players — chibi character (head + body), smooth interpolated position
       Object.values(gs.players).forEach((p) => {
         if (!p.alive) return;
@@ -497,10 +601,6 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
         const cx = dp.x * CS + CS / 2, cy = dp.y * CS + CS / 2;
         const color = PLAYER_COLORS[p.slot];
         const isMe = p.id === myId;
-        const headR = CS * 0.27;
-        const headY = cy - CS * 0.12;
-        const bodyW = CS * 0.32, bodyH = CS * 0.22;
-        const bodyY = cy + CS * 0.16;
         const pRange = p.range ?? 1;
         const pBombs = p.maxBombs ?? 1;
         const pSpeed = p.speed ?? 1;
@@ -515,7 +615,7 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
           trailHistory.current.set(p.id, trimmed);
           trimmed.forEach((h, i) => {
             const age = (now - h.t) / 220;
-            ctx.beginPath(); ctx.arc(h.x, h.y, headR * (1 - age * 0.4), 0, Math.PI * 2);
+            ctx.beginPath(); ctx.arc(h.x, h.y, CS * 0.27 * (1 - age * 0.4), 0, Math.PI * 2);
             ctx.fillStyle = `rgba(74,222,128,${0.18 * (1 - age)})`; ctx.fill();
           });
         }
@@ -527,76 +627,194 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
           ctx.lineWidth = 1.5; ctx.stroke();
         }
 
+        const hR = CS * 0.28;
+        const hY = cy - CS * 0.15;
+        const bW = CS * 0.36, bH = CS * 0.25;
+        const bY = cy + CS * 0.18;
+        const HAIR = ["#1d4ed8","#b91c1c","#15803d","#7e22ce"];
+        const hairColor = HAIR[p.slot] ?? "#333";
+        const SKIN = "#ffd5a8";
+
         // ground shadow
         ctx.beginPath();
-        ctx.ellipse(cx, cy + CS * 0.38, CS * 0.22, CS * 0.06, 0, 0, Math.PI * 2);
+        ctx.ellipse(cx, cy + CS * 0.4, CS * 0.2, CS * 0.05, 0, 0, Math.PI * 2);
         ctx.fillStyle = "rgba(0,0,0,0.4)"; ctx.fill();
 
         // ambient glow
-        const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, CS * 0.65);
-        glow.addColorStop(0, color + (isMe ? "55" : "33"));
+        const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, CS * 0.6);
+        glow.addColorStop(0, color + (isMe ? "44" : "22"));
         glow.addColorStop(1, color + "00");
-        ctx.beginPath(); ctx.arc(cx, cy, CS * 0.65, 0, Math.PI * 2);
+        ctx.beginPath(); ctx.arc(cx, cy, CS * 0.6, 0, Math.PI * 2);
         ctx.fillStyle = glow; ctx.fill();
 
-        // body
+        // ── BODY (suit/outfit) ──
         ctx.beginPath();
-        ctx.ellipse(cx, bodyY, bodyW, bodyH, 0, 0, Math.PI * 2);
-        ctx.fillStyle = color + "55"; ctx.fill();
+        ctx.roundRect(cx - bW/2, bY - bH/2, bW, bH, bH * 0.35);
+        ctx.fillStyle = color + "dd"; ctx.fill();
         ctx.strokeStyle = color; ctx.lineWidth = isMe ? 2 : 1.5; ctx.stroke();
-
-        // head
+        // suit center line
+        ctx.beginPath(); ctx.moveTo(cx, bY - bH*0.45); ctx.lineTo(cx, bY + bH*0.4);
+        ctx.strokeStyle = "rgba(0,0,0,0.2)"; ctx.lineWidth = 1; ctx.stroke();
+        // collar
         ctx.beginPath();
-        ctx.arc(cx, headY, headR, 0, Math.PI * 2);
-        ctx.fillStyle = color + "33"; ctx.fill();
-        ctx.strokeStyle = color; ctx.lineWidth = isMe ? 2.5 : 2; ctx.stroke();
+        ctx.moveTo(cx - bW*0.18, bY - bH*0.45);
+        ctx.lineTo(cx, bY - bH*0.2);
+        ctx.lineTo(cx + bW*0.18, bY - bH*0.45);
+        ctx.strokeStyle = "rgba(255,255,255,0.35)"; ctx.lineWidth = 1.5; ctx.stroke();
 
-        // head shine
-        ctx.beginPath();
-        ctx.arc(cx - headR * 0.28, headY - headR * 0.28, headR * 0.22, 0, Math.PI * 2);
-        ctx.fillStyle = "rgba(255,255,255,0.35)"; ctx.fill();
-
-        // eyes
-        const eyeY = headY + headR * 0.1;
-        const eyeOff = headR * 0.3;
-        [cx - eyeOff, cx + eyeOff].forEach((ex) => {
-          ctx.beginPath(); ctx.arc(ex, eyeY, headR * 0.13, 0, Math.PI * 2);
-          ctx.fillStyle = color; ctx.fill();
+        // ── ARMS ──
+        [-1, 1].forEach(s => {
+          ctx.beginPath();
+          ctx.ellipse(cx + s*(bW/2 + CS*0.055), bY - CS*0.02, CS*0.075, CS*0.05, s*0.25, 0, Math.PI*2);
+          ctx.fillStyle = color + "dd"; ctx.fill();
+          ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.stroke();
         });
+
+        // ── HAIR (drawn behind head) ──
+        ctx.save();
+        if (p.slot === 0) {
+          // Spiky hero — 3 spikes up
+          const spikes = [[-0.35, -1.15], [0, -1.3], [0.35, -1.1]];
+          spikes.forEach(([ox, oy]) => {
+            ctx.beginPath();
+            ctx.moveTo(cx + ox*hR - hR*0.12, hY + hR*0.1);
+            ctx.lineTo(cx + ox*hR, hY + oy*hR);
+            ctx.lineTo(cx + ox*hR + hR*0.12, hY + hR*0.1);
+            ctx.closePath(); ctx.fillStyle = hairColor; ctx.fill();
+          });
+          ctx.beginPath(); ctx.arc(cx, hY, hR, Math.PI, 0);
+          ctx.fillStyle = hairColor; ctx.fill();
+        } else if (p.slot === 1) {
+          // Fierce swept right — angular
+          ctx.beginPath();
+          ctx.moveTo(cx - hR*0.9, hY + hR*0.3);
+          ctx.bezierCurveTo(cx - hR*1.1, hY - hR*0.7, cx - hR*0.2, hY - hR*1.3, cx + hR*0.6, hY - hR*1.0);
+          ctx.bezierCurveTo(cx + hR*1.2, hY - hR*0.7, cx + hR*0.9, hY - hR*0.1, cx + hR*0.6, hY + hR*0.1);
+          ctx.bezierCurveTo(cx + hR*0.1, hY - hR*0.2, cx - hR*0.3, hY + hR*0.0, cx - hR*0.6, hY + hR*0.2);
+          ctx.closePath(); ctx.fillStyle = hairColor; ctx.fill();
+          // ahoge
+          ctx.beginPath();
+          ctx.moveTo(cx + hR*0.1, hY - hR*0.85);
+          ctx.bezierCurveTo(cx + hR*0.5, hY - hR*1.6, cx + hR*0.9, hY - hR*1.3, cx + hR*0.7, hY - hR*0.6);
+          ctx.strokeStyle = hairColor; ctx.lineWidth = hR*0.28; ctx.lineCap = "round"; ctx.stroke();
+        } else if (p.slot === 2) {
+          // Cute fluffy twin puffs
+          ctx.beginPath(); ctx.arc(cx, hY, hR, Math.PI, 0);
+          ctx.fillStyle = hairColor; ctx.fill();
+          [-0.52, 0.52].forEach(ox => {
+            ctx.beginPath(); ctx.arc(cx + ox*hR, hY - hR*0.62, hR*0.48, 0, Math.PI*2);
+            ctx.fillStyle = hairColor; ctx.fill();
+          });
+          // top puff
+          ctx.beginPath(); ctx.arc(cx, hY - hR*0.82, hR*0.36, 0, Math.PI*2);
+          ctx.fillStyle = hairColor; ctx.fill();
+        } else {
+          // Mysterious long side-swept left
+          ctx.beginPath();
+          ctx.arc(cx, hY, hR, Math.PI, 0);
+          ctx.fillStyle = hairColor; ctx.fill();
+          // long sweep left
+          ctx.beginPath();
+          ctx.moveTo(cx + hR*0.4, hY - hR*0.85);
+          ctx.bezierCurveTo(cx - hR*0.3, hY - hR*1.1, cx - hR*1.1, hY - hR*0.6, cx - hR*1.05, hY + hR*0.45);
+          ctx.bezierCurveTo(cx - hR*0.85, hY + hR*0.7, cx - hR*0.3, hY + hR*0.2, cx, hY + hR*0.05);
+          ctx.fillStyle = hairColor; ctx.fill();
+          // hair strand over eye
+          ctx.beginPath();
+          ctx.moveTo(cx - hR*0.1, hY - hR*0.9);
+          ctx.bezierCurveTo(cx - hR*0.6, hY - hR*0.5, cx - hR*0.7, hY + hR*0.1, cx - hR*0.55, hY + hR*0.35);
+          ctx.strokeStyle = hairColor; ctx.lineWidth = hR*0.32; ctx.lineCap = "round"; ctx.stroke();
+        }
+        ctx.restore();
+
+        // ── HEAD ──
+        ctx.beginPath(); ctx.arc(cx, hY, hR, 0, Math.PI*2);
+        ctx.fillStyle = SKIN; ctx.fill();
+        ctx.strokeStyle = isMe ? color : "rgba(0,0,0,0.2)";
+        ctx.lineWidth = isMe ? 2 : 1; ctx.stroke();
+
+        // ── EYES ──
+        const eyeY = hY + hR * 0.02;
+        const eyeOff = hR * 0.33;
+        // slot 3: left eye covered by hair — only draw right
+        const eyeSlots = p.slot === 3 ? [cx + eyeOff] : [cx - eyeOff, cx + eyeOff];
+        eyeSlots.forEach((ex) => {
+          ctx.beginPath(); ctx.ellipse(ex, eyeY, hR*0.2, hR*0.23, 0, 0, Math.PI*2);
+          ctx.fillStyle = "#fff"; ctx.fill();
+          ctx.beginPath(); ctx.arc(ex, eyeY + hR*0.04, hR*0.13, 0, Math.PI*2);
+          ctx.fillStyle = color; ctx.fill();
+          ctx.beginPath(); ctx.arc(ex, eyeY + hR*0.04, hR*0.07, 0, Math.PI*2);
+          ctx.fillStyle = "#111"; ctx.fill();
+          ctx.beginPath(); ctx.arc(ex - hR*0.06, eyeY - hR*0.04, hR*0.04, 0, Math.PI*2);
+          ctx.fillStyle = "#fff"; ctx.fill();
+        });
+
+        // blush
+        [cx - hR*0.44, cx + hR*0.44].forEach(bx => {
+          ctx.beginPath(); ctx.ellipse(bx, eyeY + hR*0.32, hR*0.17, hR*0.09, 0, 0, Math.PI*2);
+          ctx.fillStyle = "rgba(255,140,140,0.35)"; ctx.fill();
+        });
+
+        // nose
+        ctx.beginPath(); ctx.arc(cx, hY + hR*0.22, hR*0.045, 0, Math.PI*2);
+        ctx.fillStyle = "rgba(0,0,0,0.2)"; ctx.fill();
+
+        // mouth per slot
+        ctx.lineWidth = hR * 0.12; ctx.lineCap = "round";
+        if (p.slot === 0) {
+          ctx.beginPath(); ctx.arc(cx, hY + hR*0.38, hR*0.2, 0.2, Math.PI-0.2);
+          ctx.strokeStyle = "rgba(0,0,0,0.5)"; ctx.stroke();
+        } else if (p.slot === 1) {
+          ctx.beginPath(); ctx.moveTo(cx - hR*0.22, hY + hR*0.4); ctx.lineTo(cx + hR*0.22, hY + hR*0.4);
+          ctx.strokeStyle = "rgba(0,0,0,0.5)"; ctx.stroke();
+        } else if (p.slot === 2) {
+          ctx.beginPath(); ctx.arc(cx, hY + hR*0.3, hR*0.22, 0.1, Math.PI-0.1);
+          ctx.strokeStyle = "rgba(0,0,0,0.5)"; ctx.stroke();
+          // ω dots
+          [cx - hR*0.2, cx + hR*0.2].forEach(mx => {
+            ctx.beginPath(); ctx.arc(mx, hY + hR*0.44, hR*0.04, 0, Math.PI*2);
+            ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.fill();
+          });
+        } else {
+          ctx.beginPath();
+          ctx.moveTo(cx - hR*0.12, hY + hR*0.42);
+          ctx.bezierCurveTo(cx, hY + hR*0.36, cx + hR*0.18, hY + hR*0.4, cx + hR*0.22, hY + hR*0.36);
+          ctx.strokeStyle = "rgba(0,0,0,0.5)"; ctx.stroke();
+        }
 
         // crown for "me" — gold ✦ above head
         if (isMe) {
           ctx.fillStyle = "#d4a843";
           ctx.font = `bold ${Math.max(10, CS * 0.26)}px sans-serif`;
           ctx.textAlign = "center"; ctx.textBaseline = "middle";
-          ctx.fillText("✦", cx, headY - headR - CS * 0.14);
+          ctx.fillText("✦", cx, hY - hR - CS * 0.14);
         }
 
         // maxBombs > 1: purple ×N badge (bottom-right of body)
         if (pBombs > 1) {
-          const bx = cx + headR * 0.85, by = bodyY + bodyH * 0.6;
-          const br = CS * 0.16;
-          ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI * 2);
+          const badgeX = cx + bW*0.5 + CS*0.08, badgeY = bY + bH*0.2;
+          const br = CS * 0.15;
+          ctx.beginPath(); ctx.arc(badgeX, badgeY, br, 0, Math.PI * 2);
           ctx.fillStyle = "#c084fc"; ctx.fill();
-          ctx.font = `bold ${Math.max(7, CS * 0.18)}px sans-serif`;
+          ctx.font = `bold ${Math.max(7, CS * 0.17)}px sans-serif`;
           ctx.textAlign = "center"; ctx.textBaseline = "middle";
-          ctx.fillStyle = "#fff"; ctx.fillText(`×${pBombs}`, bx, by);
+          ctx.fillStyle = "#fff"; ctx.fillText(`×${pBombs}`, badgeX, badgeY);
         }
-        // speed > 1: green speed lines on body (right side)
+        // speed > 1: green speed lines on right side of body
         if (pSpeed > 1) {
-          const lines = Math.floor(pSpeed);
+          const lines = Math.min(Math.floor(pSpeed), 3);
           for (let i = 0; i < lines; i++) {
-            const ly = bodyY - bodyH*0.3 + i * bodyH*0.35;
+            const ly = bY - bH*0.2 + i * bH*0.25;
             ctx.beginPath();
-            ctx.moveTo(cx + bodyW*0.6, ly);
-            ctx.lineTo(cx + bodyW*1.1, ly - CS*0.04);
-            ctx.strokeStyle = `rgba(74,222,128,0.7)`; ctx.lineWidth = 1.5; ctx.stroke();
+            ctx.moveTo(cx + bW*0.55, ly);
+            ctx.lineTo(cx + bW*0.95, ly - CS*0.04);
+            ctx.strokeStyle = `rgba(74,222,128,0.75)`; ctx.lineWidth = 1.5; ctx.lineCap = "round"; ctx.stroke();
           }
         }
 
         // "โคตรเสียว" wallbreak label
         const showWb = wallbreakLabels.current.has(p.id);
-        const nameBaseY = headY - headR - (isMe ? CS * 0.28 : CS * 0.06);
+        const nameBaseY = hY - hR - (isMe ? CS * 0.28 : CS * 0.06);
         const nameY = showWb ? nameBaseY - CS * 0.22 : nameBaseY;
         if (showWb) {
           ctx.font = `bold ${Math.max(7, CS * 0.2)}px sans-serif`;
@@ -694,7 +912,15 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
       <div className="flex items-center justify-center gap-3">
         {/* Left — Virtual Joystick */}
         {showControls && (
-          <VirtualJoystick dirRef={joystickDirRef} />
+          <VirtualJoystick
+            dirRef={joystickDirRef}
+            onDirChange={(dir) => {
+              if (dir && !dead && !isSpectator) {
+                socket.emit("move", { code, dir });
+                lastMoveRef.current = Date.now();
+              }
+            }}
+          />
         )}
 
         {/* Canvas */}
@@ -722,13 +948,14 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
 }
 
 // ── Virtual Joystick ──
-function VirtualJoystick({ dirRef }: { dirRef: React.MutableRefObject<string | null> }) {
-  const OUTER = 56; // outer radius px
-  const KNOB = 22;  // knob radius px
-  const DEAD = 0.28; // deadzone fraction
+function VirtualJoystick({ dirRef, onDirChange }: { dirRef: React.MutableRefObject<string | null>; onDirChange?: (dir: string | null) => void }) {
+  const OUTER = 72; // outer radius px
+  const KNOB = 26;  // knob radius px
+  const DEAD = 0.25; // deadzone fraction
   const [knob, setKnob] = useState({ x: 0, y: 0 });
   const activePtr = useRef<number | null>(null);
   const baseRef = useRef<{ x: number; y: number } | null>(null);
+  const prevDirRef = useRef<string | null>(null);
 
   function getDir(dx: number, dy: number): string | null {
     if (Math.sqrt(dx * dx + dy * dy) < OUTER * DEAD) return null;
@@ -757,13 +984,17 @@ function VirtualJoystick({ dirRef }: { dirRef: React.MutableRefObject<string | n
     const kx = dist > 0 ? (dx / dist) * clamped : 0;
     const ky = dist > 0 ? (dy / dist) * clamped : 0;
     setKnob({ x: kx, y: ky });
-    dirRef.current = getDir(kx, ky);
+    const newDir = getDir(kx, ky);
+    dirRef.current = newDir;
+    if (newDir !== prevDirRef.current) { prevDirRef.current = newDir; onDirChange?.(newDir); }
   }
   function onUp(e: React.PointerEvent) {
     if (e.pointerId !== activePtr.current) return;
     activePtr.current = null;
     baseRef.current = null;
     dirRef.current = null;
+    prevDirRef.current = null;
+    onDirChange?.(null);
     setKnob({ x: 0, y: 0 });
   }
 
@@ -805,7 +1036,7 @@ function VirtualJoystick({ dirRef }: { dirRef: React.MutableRefObject<string | n
 function BombButton({ onBomb }: { onBomb: () => void }) {
   return (
     <button
-      style={{ width: 70, height: 70, borderRadius: "50%", background: "rgba(248,113,113,.25)", border: "2px solid rgba(248,113,113,.6)", fontSize: 28, display: "flex", alignItems: "center", justifyContent: "center", touchAction: "none", userSelect: "none" }}
+      style={{ width: 88, height: 88, borderRadius: "50%", background: "rgba(248,113,113,.25)", border: "2px solid rgba(248,113,113,.6)", fontSize: 34, display: "flex", alignItems: "center", justifyContent: "center", touchAction: "none", userSelect: "none", boxShadow: "0 4px 20px rgba(248,113,113,.3)" }}
       onPointerDown={(e) => { e.preventDefault(); onBomb(); }}
     >💣</button>
   );
