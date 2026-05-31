@@ -398,11 +398,33 @@ function bfsChase(gs, sx, sy, tx, ty) {
   return null;
 }
 
-// Check if bot can reach a safe cell after placing a hypothetical bomb
+// BFS treating soft walls as passable — returns first step toward target (for wall-busting)
+function bfsThruSoft(gs, sx, sy, tx, ty) {
+  const queue = [[sx, sy, null]];
+  const visited = new Set([`${sx},${sy}`]);
+  const DIRS4 = [['up',0,-1],['down',0,1],['left',-1,0],['right',1,0]];
+  while (queue.length) {
+    const [cx, cy, firstDir] = queue.shift();
+    if (cx === tx && cy === ty) return firstDir;
+    for (const [d, dx, dy] of DIRS4) {
+      const nx = cx+dx, ny = cy+dy;
+      const key = `${nx},${ny}`;
+      if (visited.has(key)) continue;
+      if (nx<0||ny<0||nx>=GRID_W||ny>=GRID_H) continue;
+      if (gs.map[ny][nx] === CELL.HARD) continue;
+      if (isInBlastZone(gs, nx, ny)) continue;
+      visited.add(key);
+      queue.push([nx, ny, firstDir ?? d]);
+    }
+  }
+  return null;
+}
+
+// Returns escape direction after placing hypothetical bomb, or null if trapped
 function canEscapeAfterBomb(gs, bx, by, range) {
   const fakeBomb = { x: bx, y: by, range };
   const fakeGs = { ...gs, bombs: [...gs.bombs, fakeBomb] };
-  return bfsEscape(fakeGs, bx, by) !== null;
+  return bfsEscape(fakeGs, bx, by); // direction string or null
 }
 
 function startBotAI(room, io) {
@@ -432,7 +454,10 @@ function startBotAI(room, io) {
       }
 
       // ── PLACE BOMB ──
-      if (p.activeBombs < p.maxBombs && Math.random() < 0.06) {
+      // only bomb when near cell center — ensures physics can follow the BFS escape path
+      const offCenter = Math.abs(p.x - (px + 0.5)) > 0.28 || Math.abs(p.y - (py + 0.5)) > 0.28;
+      if (!offCenter && p.activeBombs < p.maxBombs && Math.random() < 0.3) {
+        const humans = Object.values(gs.players).filter(q => q.alive && !q.isBot);
         const nearTarget = (() => {
           for (const [ddx,ddy] of [[0,-1],[0,1],[-1,0],[1,0]]) {
             for (let i=1; i<=p.range; i++) {
@@ -440,18 +465,19 @@ function startBotAI(room, io) {
               if (nx<0||ny<0||nx>=GRID_W||ny>=GRID_H) break;
               if (gs.map[ny][nx]===CELL.HARD) break;
               if (gs.map[ny][nx]===CELL.SOFT) return true;
-              if (Object.values(gs.players).some(q=>q.alive&&!q.isBot&&Math.floor(q.x)===nx&&Math.floor(q.y)===ny)) return true;
+              if (humans.some(q => Math.hypot(q.x-(nx+0.5), q.y-(ny+0.5)) < 0.8)) return true;
             }
           }
           return false;
         })();
-        if (nearTarget && canEscapeAfterBomb(gs, px, py, p.range)) {
+        const escDir = canEscapeAfterBomb(gs, px, py, p.range);
+        if (nearTarget && escDir) {
           const bomb = placeBomb(gs, p.id);
           if (bomb) {
             io.to(r.code).emit('bombPlaced', { bomb, playerId: p.id });
-            p.fleeUntil = Date.now() + 2800; // flee until just before bomb explodes
-            const escDir = bfsEscape(gs, px, py);
-            if (escDir) { const d = dirToDxDy(escDir); p.dx = d.dx; p.dy = d.dy; }
+            p.fleeUntil = Date.now() + 3300; // bomb timer 3000ms + 300ms buffer
+            const d = dirToDxDy(escDir);
+            p.dx = d.dx; p.dy = d.dy;
             return;
           }
         }
@@ -463,7 +489,9 @@ function startBotAI(room, io) {
       if (humans.length) {
         const target = humans.reduce((a, b) =>
           Math.hypot(a.x-p.x, a.y-p.y) < Math.hypot(b.x-p.x, b.y-p.y) ? a : b);
-        const chaseDir = bfsChase(gs, px, py, Math.floor(target.x), Math.floor(target.y));
+        const tx = Math.floor(target.x), ty = Math.floor(target.y);
+        const chaseDir = bfsChase(gs, px, py, tx, ty)
+          ?? bfsThruSoft(gs, px, py, tx, ty); // fallback: navigate through soft walls
         if (chaseDir) { const d = dirToDxDy(chaseDir); p.dx = d.dx; p.dy = d.dy; chased = true; }
       }
 
