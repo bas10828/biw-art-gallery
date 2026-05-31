@@ -25,7 +25,7 @@ function calcCellSize(hasControls: boolean) {
   return Math.max(20, Math.floor(Math.min(maxW / GRID_W, maxH / GRID_H)));
 }
 const PLAYER_COLORS = ["#60a5fa", "#f87171", "#4ade80", "#c084fc"];
-const POWERUP_ART = ARTWORKS.slice(0, 3); // 3 artworks for 3 powerup types
+const POWERUP_ART = ARTWORKS.slice(0, 4); // 4 artworks for 4 powerup types
 
 const DIRS: Record<string, [number, number]> = {
   ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0],
@@ -39,6 +39,9 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
   const explosionsRef = useRef<{ cells: { x: number; y: number }[]; timer: number }[]>([]);
   const [dead, setDead] = useState(false);
   const [winner, setWinner] = useState<{ id: string; name: string } | null | undefined>(undefined);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wallbreakLabels = useRef<Set<string>>(new Set()); // playerIds who collected wallbreak
   const [suddenDeathCells, setSuddenDeathCells] = useState<{ x: number; y: number }[]>([]);
   const [cellSize, setCellSize] = useState(36);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -46,7 +49,18 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
   const animRef = useRef<number>(0);
   const keysRef = useRef<Set<string>>(new Set());
   const lastMoveRef = useRef<number>(0);
+  const imgCache = useRef<Map<string, HTMLImageElement>>(new Map());
   const code = room.code;
+
+  // ── Preload artwork images for powerups ──
+  useEffect(() => {
+    POWERUP_ART.forEach((art) => {
+      if (imgCache.current.has(art.file)) return;
+      const img = new Image();
+      img.src = `/images/${art.file}`;
+      imgCache.current.set(art.file, img);
+    });
+  }, []);
 
   // ── Auto fullscreen on mount ──
   useEffect(() => {
@@ -120,6 +134,12 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
       if (playerId === myId) setDead(true);
     });
     socket.on("gameOver", ({ winner: w }: any) => setWinner(w ?? null));
+    socket.on("wallbreakUsed", ({ name, cleared, playerId }: { name: string; cleared: number; playerId: string }) => {
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+      setToast(`💥 ${name} WALLBREAK! (${cleared} กำแพง)`);
+      toastTimer.current = setTimeout(() => setToast(null), 2500);
+      wallbreakLabels.current.add(playerId);
+    });
     socket.on("suddenDeath", ({ cells, map }: any) => {
       stateRef.current.map = map;
       setSuddenDeathCells(cells);
@@ -129,6 +149,7 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
       socket.off("gameState"); socket.off("playerMoved"); socket.off("bombPlaced");
       socket.off("explosion"); socket.off("mapUpdate"); socket.off("powerupsUpdate");
       socket.off("playerDied"); socket.off("gameOver"); socket.off("suddenDeath");
+      socket.off("wallbreakUsed");
     };
   }, [socket, myId]);
 
@@ -220,22 +241,45 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
         ctx.fillRect(x * CS, y * CS, CS, CS);
       });
 
-      // powerups (use artwork thumbnails as colored circles)
+      // powerups — artwork thumbnail circle
       gs.powerups?.forEach((pu) => {
         const px = pu.x * CS + CS / 2, py = pu.y * CS + CS / 2;
-        const color = pu.type === "range" ? "#f87171" : pu.type === "bombs" ? "#c084fc" : "#4ade80";
-        ctx.beginPath();
-        ctx.arc(px, py, CS * 0.32, 0, Math.PI * 2);
-        ctx.fillStyle = color + "33";
-        ctx.fill();
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 2;
-        ctx.stroke();
+        const color = pu.type === "range" ? "#f87171" : pu.type === "bombs" ? "#c084fc" : pu.type === "wallbreak" ? "#d4a843" : "#4ade80";
+        const artIdx = pu.type === "range" ? 0 : pu.type === "bombs" ? 1 : pu.type === "wallbreak" ? 3 : 2;
+        const artFile = POWERUP_ART[artIdx]?.file;
+        const r = CS * 0.36;
+        // outer glow
+        const glow = ctx.createRadialGradient(px, py, r * 0.5, px, py, r * 1.6);
+        glow.addColorStop(0, color + "44"); glow.addColorStop(1, color + "00");
+        ctx.beginPath(); ctx.arc(px, py, r * 1.6, 0, Math.PI * 2);
+        ctx.fillStyle = glow; ctx.fill();
+        // artwork image (centered-square crop)
+        const img = artFile ? imgCache.current.get(artFile) : null;
+        ctx.save();
+        ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.clip();
+        if (img && img.complete && img.naturalWidth > 0) {
+          const sSize = Math.min(img.naturalWidth, img.naturalHeight);
+          const sx = (img.naturalWidth - sSize) / 2;
+          const sy = (img.naturalHeight - sSize) / 2;
+          ctx.drawImage(img, sx, sy, sSize, sSize, px - r, py - r, r * 2, r * 2);
+          // subtle dark tint overlay for readability
+          ctx.fillStyle = "rgba(0,0,0,0.25)"; ctx.fillRect(px - r, py - r, r * 2, r * 2);
+        } else {
+          ctx.fillStyle = color + "33"; ctx.fill();
+        }
+        ctx.restore();
+        // ring border
+        ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2);
+        ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.stroke();
+        // type icon badge (small circle bottom-right)
+        const bx = px + r * 0.6, by = py + r * 0.6, br = r * 0.32;
+        ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI * 2);
+        ctx.fillStyle = "#0a0a0f"; ctx.fill();
+        ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.stroke();
         ctx.fillStyle = color;
-        ctx.font = "bold 13px sans-serif";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(pu.type === "range" ? "↔" : pu.type === "bombs" ? "💣" : "⚡", px, py);
+        ctx.font = `bold ${Math.max(9, CS * 0.22)}px sans-serif`;
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText(pu.type === "range" ? "↔" : pu.type === "bombs" ? "+" : pu.type === "wallbreak" ? "✦" : "⚡", bx, by);
       });
 
       // bombs
@@ -280,33 +324,87 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
         });
       });
 
-      // players
+      // players — chibi character (head + body)
       Object.values(gs.players).forEach((p) => {
         if (!p.alive) return;
-        const px = p.x * CS + CS / 2, py = p.y * CS + CS / 2;
+        const cx = p.x * CS + CS / 2, cy = p.y * CS + CS / 2;
         const color = PLAYER_COLORS[p.slot];
         const isMe = p.id === myId;
-        // glow
-        const glow = ctx.createRadialGradient(px, py, 0, px, py, CS * 0.6);
-        glow.addColorStop(0, color + "44");
+        const headR = CS * 0.27;
+        const headY = cy - CS * 0.12;
+        const bodyW = CS * 0.32, bodyH = CS * 0.22;
+        const bodyY = cy + CS * 0.16;
+
+        // ground shadow
+        ctx.beginPath();
+        ctx.ellipse(cx, cy + CS * 0.38, CS * 0.22, CS * 0.06, 0, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(0,0,0,0.4)"; ctx.fill();
+
+        // ambient glow
+        const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, CS * 0.65);
+        glow.addColorStop(0, color + (isMe ? "55" : "33"));
         glow.addColorStop(1, color + "00");
-        ctx.fillStyle = glow;
-        ctx.beginPath(); ctx.arc(px, py, CS * 0.6, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(cx, cy, CS * 0.65, 0, Math.PI * 2);
+        ctx.fillStyle = glow; ctx.fill();
+
         // body
         ctx.beginPath();
-        ctx.arc(px, py, CS * 0.38, 0, Math.PI * 2);
-        ctx.fillStyle = color + "22"; ctx.fill();
-        ctx.strokeStyle = color; ctx.lineWidth = isMe ? 3 : 2; ctx.stroke();
-        // spirit symbol
-        ctx.fillStyle = color;
-        ctx.font = `bold ${isMe ? 16 : 14}px sans-serif`;
-        ctx.textAlign = "center"; ctx.textBaseline = "middle";
-        ctx.fillText("✦", px, py);
+        ctx.ellipse(cx, bodyY, bodyW, bodyH, 0, 0, Math.PI * 2);
+        ctx.fillStyle = color + "55"; ctx.fill();
+        ctx.strokeStyle = color; ctx.lineWidth = isMe ? 2 : 1.5; ctx.stroke();
+
+        // head
+        ctx.beginPath();
+        ctx.arc(cx, headY, headR, 0, Math.PI * 2);
+        ctx.fillStyle = color + "33"; ctx.fill();
+        ctx.strokeStyle = color; ctx.lineWidth = isMe ? 2.5 : 2; ctx.stroke();
+
+        // head shine
+        ctx.beginPath();
+        ctx.arc(cx - headR * 0.28, headY - headR * 0.28, headR * 0.22, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(255,255,255,0.35)"; ctx.fill();
+
+        // eyes
+        const eyeY = headY + headR * 0.1;
+        const eyeOff = headR * 0.3;
+        [cx - eyeOff, cx + eyeOff].forEach((ex) => {
+          ctx.beginPath(); ctx.arc(ex, eyeY, headR * 0.13, 0, Math.PI * 2);
+          ctx.fillStyle = color; ctx.fill();
+        });
+
+        // crown for "me" — gold ✦ above head
+        if (isMe) {
+          ctx.fillStyle = "#d4a843";
+          ctx.font = `bold ${Math.max(10, CS * 0.26)}px sans-serif`;
+          ctx.textAlign = "center"; ctx.textBaseline = "middle";
+          ctx.fillText("✦", cx, headY - headR - CS * 0.14);
+        }
+
+        // "โคตรเสียว" wallbreak label
+        const showWb = wallbreakLabels.current.has(p.id);
+        const nameBaseY = headY - headR - (isMe ? CS * 0.28 : CS * 0.06);
+        const nameY = showWb ? nameBaseY - CS * 0.22 : nameBaseY;
+        if (showWb) {
+          ctx.font = `bold ${Math.max(7, CS * 0.2)}px sans-serif`;
+          ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+          const wbLabel = "โคตรเสียว";
+          const wbW = ctx.measureText(wbLabel).width + CS * 0.16;
+          ctx.beginPath();
+          ctx.roundRect(cx - wbW / 2, nameY - CS * 0.4, wbW, CS * 0.2, 3);
+          ctx.fillStyle = "#d4a843"; ctx.fill();
+          ctx.fillStyle = "#000";
+          ctx.fillText(wbLabel, cx, nameY - CS * 0.2);
+        }
         // name tag
-        ctx.fillStyle = "#fff";
-        ctx.font = "10px sans-serif";
-        ctx.textAlign = "center";
-        ctx.fillText(p.name, px, py - CS * 0.55);
+        ctx.font = `${Math.max(8, CS * 0.22)}px sans-serif`;
+        ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+        // name background pill
+        const nameW = ctx.measureText(p.name).width + CS * 0.14;
+        ctx.beginPath();
+        ctx.roundRect(cx - nameW / 2, nameY - CS * 0.19, nameW, CS * 0.19, 3);
+        ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fill();
+        ctx.fillStyle = isMe ? "#d4a843" : "#fff";
+        ctx.fillText(p.name, cx, nameY);
       });
 
       animRef.current = requestAnimationFrame(draw);
@@ -326,6 +424,14 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
       className="fixed inset-0 flex flex-col items-center justify-center"
       style={{ background: "#0a0a0f" }}
     >
+      {/* Wallbreak toast */}
+      {toast && (
+        <div className="absolute top-12 left-1/2 z-40 -translate-x-1/2 px-5 py-2 rounded-full text-sm font-bold pointer-events-none"
+          style={{ background: "rgba(212,168,67,.95)", color: "#000", boxShadow: "0 4px 20px rgba(212,168,67,.5)", animation: "merch-slidein .25s ease both" }}>
+          {toast}
+        </div>
+      )}
+
       {/* Portrait overlay — rotate prompt */}
       {isPortrait && (
         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-4"

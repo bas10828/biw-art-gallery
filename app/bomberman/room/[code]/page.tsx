@@ -33,6 +33,7 @@ export default function RoomPage() {
   const [error, setError] = useState("");
   const [gameData, setGameData] = useState<any>(null);
   const [winner, setWinner] = useState<{ id: string; name: string } | null | undefined>(undefined);
+  const [gameStats, setGameStats] = useState<{ id: string; name: string; slot: number; isBot: boolean; alive: boolean; kills: number }[]>([]);
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
@@ -70,8 +71,9 @@ export default function RoomPage() {
       setPhase("playing");
     });
 
-    s.on("gameOver", ({ winner: w }: any) => {
+    s.on("gameOver", ({ winner: w, stats }: any) => {
       setWinner(w);
+      if (stats) setGameStats(stats);
       setPhase("ended");
     });
 
@@ -149,60 +151,87 @@ export default function RoomPage() {
   }
 
   if (phase === "ended") {
+    const sorted = [...gameStats].sort((a, b) => {
+      if (a.alive !== b.alive) return a.alive ? -1 : 1;
+      return b.kills - a.kills;
+    });
     return (
-      <main className="min-h-screen flex items-center justify-center px-6">
-        <div className="text-center max-w-sm w-full">
-          <div
-            className="rounded-2xl p-10 border"
-            style={{ background: "var(--color-bg3)", borderColor: "rgba(212,168,67,.2)" }}
-          >
-            <p className="text-gold text-xs tracking-widest uppercase mb-4">จบเกม</p>
-            {winner ? (
-              <>
-                <div
-                  className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center text-2xl font-bold border-2"
-                  style={{
-                    background: PLAYER_COLORS[room?.players.find(p => p.id === winner.id)?.slot ?? 0] + "22",
-                    borderColor: PLAYER_COLORS[room?.players.find(p => p.id === winner.id)?.slot ?? 0],
-                    color: PLAYER_COLORS[room?.players.find(p => p.id === winner.id)?.slot ?? 0],
-                  }}
-                >
-                  ✦
+      <main className="min-h-screen flex items-center justify-center px-4 py-10">
+        <div className="w-full max-w-md">
+          <div className="rounded-2xl border overflow-hidden" style={{ background: "var(--color-bg3)", borderColor: "rgba(212,168,67,.2)" }}>
+            {/* Header */}
+            <div className="px-6 pt-7 pb-4 text-center border-b" style={{ borderColor: "rgba(212,168,67,.1)" }}>
+              <p className="text-gold text-[10px] tracking-[.22em] uppercase mb-2">จบเกม</p>
+              {winner ? (
+                <>
+                  <div className="w-14 h-14 rounded-full mx-auto mb-3 flex items-center justify-center text-xl border-2"
+                    style={{
+                      background: PLAYER_COLORS[gameStats.find(p => p.id === winner.id)?.slot ?? 0] + "22",
+                      borderColor: PLAYER_COLORS[gameStats.find(p => p.id === winner.id)?.slot ?? 0],
+                      color: PLAYER_COLORS[gameStats.find(p => p.id === winner.id)?.slot ?? 0],
+                    }}>✦</div>
+                  <h2 className="font-bold text-xl mb-0.5" style={{ fontFamily: "var(--font-serif)", color: "var(--color-gold-light)" }}>
+                    {winner.name}
+                  </h2>
+                  <p className="text-xs" style={{ color: "var(--color-gold)" }}>ชนะ!</p>
+                </>
+              ) : (
+                <p className="text-ink2 text-lg font-bold">เสมอ!</p>
+              )}
+            </div>
+
+            {/* Stats table */}
+            {sorted.length > 0 && (
+              <div className="px-4 py-3">
+                <div className="grid text-xs mb-1 px-2" style={{ gridTemplateColumns: "1.5rem 1fr 3rem 4rem", color: "var(--color-ink3)", gap: "0 8px" }}>
+                  <span>#</span><span>ผู้เล่น</span><span className="text-center">Kill</span><span className="text-center">สถานะ</span>
                 </div>
-                <h2
-                  className="font-bold text-2xl mb-1"
-                  style={{ fontFamily: "var(--font-serif)", color: "var(--color-gold-light)" }}
-                >
-                  {winner.name}
-                </h2>
-                <p className="text-ink2 text-sm mb-8">ชนะ!</p>
-              </>
-            ) : (
-              <p className="text-ink2 text-lg mb-8">เสมอ!</p>
+                {sorted.map((p, i) => {
+                  const color = PLAYER_COLORS[p.slot];
+                  const isWinner = winner?.id === p.id;
+                  return (
+                    <div key={p.id}
+                      className="grid items-center px-2 py-2 rounded-lg mb-1 text-sm"
+                      style={{
+                        gridTemplateColumns: "1.5rem 1fr 3rem 4rem",
+                        gap: "0 8px",
+                        background: isWinner ? "rgba(212,168,67,.08)" : "rgba(255,255,255,.03)",
+                        border: `1px solid ${isWinner ? "rgba(212,168,67,.25)" : "rgba(255,255,255,.05)"}`,
+                      }}
+                    >
+                      <span className="font-bold text-xs" style={{ color: i === 0 ? "#d4a843" : "var(--color-ink3)" }}>
+                        {i + 1}
+                      </span>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-5 h-5 rounded-full shrink-0 flex items-center justify-center text-[10px] font-bold border"
+                          style={{ background: color + "22", borderColor: color, color }}>
+                          {p.isBot ? "🤖" : p.name[0]?.toUpperCase()}
+                        </div>
+                        <span className="truncate" style={{ color: "var(--color-ink)" }}>{p.name}</span>
+                        {p.id === myId && <span className="text-[10px] shrink-0" style={{ color: "var(--color-gold)" }}>คุณ</span>}
+                      </div>
+                      <span className="text-center font-bold" style={{ color: p.kills > 0 ? "#f87171" : "var(--color-ink3)" }}>
+                        {p.kills}
+                      </span>
+                      <span className="text-center text-[11px]" style={{ color: p.alive ? "#4ade80" : "var(--color-ink3)" }}>
+                        {p.alive ? "รอด ✓" : "ออก"}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
             )}
-            <div className="flex gap-3 justify-center flex-wrap">
+
+            {/* Buttons */}
+            <div className="flex gap-3 justify-center px-6 pb-6 pt-2">
               {isHost() && (
-                <button
-                  onClick={rematch}
-                  className="px-6 py-2.5 rounded-xl text-sm font-semibold transition-all hover:-translate-y-0.5"
-                  style={{
-                    background: "rgba(212,168,67,.15)",
-                    border: "1px solid rgba(212,168,67,.3)",
-                    color: "var(--color-gold-light)",
-                  }}
-                >
+                <button onClick={rematch} className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all hover:-translate-y-0.5"
+                  style={{ background: "rgba(212,168,67,.15)", border: "1px solid rgba(212,168,67,.3)", color: "var(--color-gold-light)" }}>
                   เล่นอีก
                 </button>
               )}
-              <button
-                onClick={leaveRoom}
-                className="px-6 py-2.5 rounded-xl text-sm font-semibold transition-all hover:-translate-y-0.5"
-                style={{
-                  background: "rgba(255,255,255,.05)",
-                  border: "1px solid rgba(255,255,255,.1)",
-                  color: "var(--color-ink2)",
-                }}
-              >
+              <button onClick={leaveRoom} className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all hover:-translate-y-0.5"
+                style={{ background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.1)", color: "var(--color-ink2)" }}>
                 ออก lobby
               </button>
             </div>

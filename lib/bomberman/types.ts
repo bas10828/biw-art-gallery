@@ -41,7 +41,7 @@ export interface Bomb {
 export interface Powerup {
   x: number;
   y: number;
-  type: 'range' | 'bombs' | 'speed';
+  type: 'range' | 'bombs' | 'speed' | 'wallbreak';
 }
 
 export interface GameState {

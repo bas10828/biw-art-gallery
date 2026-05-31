@@ -142,7 +142,7 @@ function allReady(room) {
 
 // ── Game Engine ────────────────────────────────────────────────────────────
 const CELL = { EMPTY: 0, HARD: 1, SOFT: 2 };
-const POWERUPS = ['range', 'bombs', 'speed'];
+const POWERUPS = ['range', 'bombs', 'speed', 'wallbreak'];
 
 function buildMap() {
   const map = [];
@@ -175,7 +175,7 @@ function initGameState(room) {
     playerStates[p.id] = {
       id: p.id, name: p.name, slot: p.slot, isBot: p.isBot,
       x: pos.x, y: pos.y,
-      alive: true, speed: 1, maxBombs: 1, range: 2,
+      alive: true, speed: 1, maxBombs: 1, range: 1, kills: 0,
       activeBombs: 0,
     };
   });
@@ -185,6 +185,7 @@ function initGameState(room) {
     bombs: [],        // { id, x, y, ownerId, timer, range }
     explosions: [],   // { cells: [{x,y}], timer }
     powerups: [],     // { x, y, type }
+    wallbreakSpawned: false,
     tick: 0,
     startedAt: Date.now(),
     suddenDeathAt: Date.now() + 3 * 60 * 1000, // 3 min
@@ -223,7 +224,10 @@ function explodeBomb(gs, bomb, io, roomCode) {
         gs.map[ny][nx] = CELL.EMPTY;
         // maybe drop powerup
         if (Math.random() < 0.35) {
-          gs.powerups.push({ x: nx, y: ny, type: POWERUPS[Math.floor(Math.random() * POWERUPS.length)] });
+          const pool = gs.wallbreakSpawned ? POWERUPS.filter(t => t !== 'wallbreak') : POWERUPS;
+          const type = pool[Math.floor(Math.random() * pool.length)];
+          if (type === 'wallbreak') gs.wallbreakSpawned = true;
+          gs.powerups.push({ x: nx, y: ny, type });
         }
         break;
       }
@@ -238,6 +242,7 @@ function explodeBomb(gs, bomb, io, roomCode) {
     Object.values(gs.players).forEach((p) => {
       if (p.alive && p.x === x && p.y === y) {
         p.alive = false;
+        if (owner && owner.id !== p.id) owner.kills++;
         io.to(roomCode).emit('playerDied', { playerId: p.id });
       }
     });
@@ -254,20 +259,44 @@ function movePlayer(gs, playerId, dir) {
   const dx = dir === 'right' ? 1 : dir === 'left' ? -1 : 0;
   const dy = dir === 'down' ? 1 : dir === 'up' ? -1 : 0;
   const nx = p.x + dx, ny = p.y + dy;
-  if (nx < 0 || ny < 0 || nx >= GRID_W || ny >= GRID_H) return false;
-  if (gs.map[ny][nx] !== CELL.EMPTY) return false;
-  if (gs.bombs.find((b) => b.x === nx && b.y === ny)) return false;
+  if (nx < 0 || ny < 0 || nx >= GRID_W || ny >= GRID_H) return { moved: false, mapChanged: false };
+  if (gs.map[ny][nx] !== CELL.EMPTY) return { moved: false, mapChanged: false };
+  if (gs.bombs.find((b) => b.x === nx && b.y === ny)) return { moved: false, mapChanged: false };
   p.x = nx; p.y = ny;
   // collect powerup
+  let mapChanged = false;
+  let wallbreakUser = null;
   const pIdx = gs.powerups.findIndex((pu) => pu.x === nx && pu.y === ny);
   if (pIdx !== -1) {
     const pu = gs.powerups[pIdx];
     if (pu.type === 'range') p.range = Math.min(p.range + 1, 8);
     if (pu.type === 'bombs') p.maxBombs = Math.min(p.maxBombs + 1, 5);
     if (pu.type === 'speed') p.speed = Math.min(p.speed + 0.5, 3);
+    if (pu.type === 'wallbreak') {
+      let cleared = 0;
+      [[1,0],[-1,0],[0,1],[0,-1]].forEach(([ddx, ddy]) => {
+        for (let i = 1; i <= p.range; i++) {
+          const bx = p.x + ddx * i, by = p.y + ddy * i;
+          if (bx < 0 || bx >= GRID_W || by < 0 || by >= GRID_H) break;
+          if (gs.map[by][bx] === CELL.HARD) break;
+          if (gs.map[by][bx] === CELL.SOFT) {
+            gs.map[by][bx] = CELL.EMPTY;
+            mapChanged = true;
+            cleared++;
+            if (Math.random() < 0.3) {
+              const pool = gs.wallbreakSpawned ? POWERUPS.filter(t => t !== 'wallbreak') : POWERUPS;
+              const type = pool[Math.floor(Math.random() * pool.length)];
+              if (type === 'wallbreak') gs.wallbreakSpawned = true;
+              gs.powerups.push({ x: bx, y: by, type });
+            }
+          }
+        }
+      });
+      if (cleared > 0) wallbreakUser = { name: p.name, cleared };
+    }
     gs.powerups.splice(pIdx, 1);
   }
-  return true;
+  return { moved: true, mapChanged, wallbreakUser };
 }
 
 function alivePlayers(gs) {
@@ -464,7 +493,10 @@ function startGameLoop(room, io) {
     if (alive.length <= 1) {
       r.phase = 'ended';
       const winner = alive[0] || null;
-      io.to(r.code).emit('gameOver', { winner: winner ? { id: winner.id, name: winner.name } : null });
+      const stats = Object.values(gs.players).map((p) => ({
+        id: p.id, name: p.name, slot: p.slot, isBot: p.isBot, alive: p.alive, kills: p.kills,
+      }));
+      io.to(r.code).emit('gameOver', { winner: winner ? { id: winner.id, name: winner.name } : null, stats });
       clearInterval(timer); gameLoops.delete(r.code);
       const bt = botTimers.get(r.code);
       if (bt) { clearInterval(bt); botTimers.delete(r.code); }
@@ -655,12 +687,16 @@ function setupSocket(io) {
     socket.on('move', ({ code, dir }) => {
       const room = rooms.get(code);
       if (!room || room.phase !== 'playing') return;
-      const moved = movePlayer(room.gameState, socket.id, dir);
+      const { moved, mapChanged, wallbreakUser } = movePlayer(room.gameState, socket.id, dir);
       if (moved) {
         const p = room.gameState.players[socket.id];
         io.to(room.code).emit('playerMoved', { playerId: socket.id, x: p.x, y: p.y });
-        // powerup collect already handled inside movePlayer
-        io.to(room.code).emit('powerupsUpdate', { powerups: room.gameState.powerups });
+        if (mapChanged) {
+          io.to(room.code).emit('mapUpdate', { map: room.gameState.map, powerups: room.gameState.powerups });
+          if (wallbreakUser) io.to(room.code).emit('wallbreakUsed', { ...wallbreakUser, playerId: socket.id });
+        } else {
+          io.to(room.code).emit('powerupsUpdate', { powerups: room.gameState.powerups });
+        }
       }
     });
 

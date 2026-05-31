@@ -2,31 +2,34 @@
 import { useEffect, useState, useRef } from "react";
 import Image from "next/image";
 
-const IMAGES = [
-  "/images/merch-black.jpg",
-  "/images/merch-white.jpg",
-  "/images/merch-flatlay.jpg",
-  "/images/merch-lifestyle-gallery.png",
-  "/images/merch-lifestyle-gallery-bw.png",
-  "/images/merch-lifestyle-sea.png",
+// ── เพิ่มสินค้า/โฆษณาใหม่ที่นี่ ──────────────────────────────────────
+const ADS = [
+  { image: "/images/merch-black.jpg",               tag: "Merch",  title: "โคตรเสียว",        desc: "เสื้อยืด limited · 3 สี\nดำ · ขาว · น้ำเงิน", link: "https://s.shopee.co.th/17ZEn4Vl5", linkText: "สั่งซื้อที่ Shopee" },
+  { image: "/images/merch-white.jpg",               tag: "Merch",  title: "โคตรเสียว",        desc: "เสื้อยืด limited · 3 สี\nดำ · ขาว · น้ำเงิน", link: "https://s.shopee.co.th/17ZEn4Vl5", linkText: "สั่งซื้อที่ Shopee" },
+  { image: "/images/merch-flatlay.jpg",             tag: "Merch",  title: "โคตรเสียว",        desc: "เสื้อยืด limited · 3 สี\nดำ · ขาว · น้ำเงิน", link: "https://s.shopee.co.th/17ZEn4Vl5", linkText: "สั่งซื้อที่ Shopee" },
+  { image: "/images/merch-lifestyle-gallery.png",   tag: "Merch",  title: "โคตรเสียว",        desc: "เสื้อยืด limited · 3 สี\nดำ · ขาว · น้ำเงิน", link: "https://s.shopee.co.th/17ZEn4Vl5", linkText: "สั่งซื้อที่ Shopee" },
+  { image: "/images/merch-lifestyle-gallery-bw.png",tag: "Merch",  title: "โคตรเสียว",        desc: "เสื้อยืด limited · 3 สี\nดำ · ขาว · น้ำเงิน", link: "https://s.shopee.co.th/17ZEn4Vl5", linkText: "สั่งซื้อที่ Shopee" },
+  { image: "/images/merch-lifestyle-sea.png",       tag: "Merch",  title: "โคตรเสียว",        desc: "เสื้อยืด limited · 3 สี\nดำ · ขาว · น้ำเงิน", link: "https://s.shopee.co.th/17ZEn4Vl5", linkText: "สั่งซื้อที่ Shopee" },
+  { image: "/images/merch-lifestyle-biw.png",       tag: "Artist", title: "บิว โคตรเสียว",    desc: "ศิลปินดิจิทัล · Digital Art 2026",              link: "https://www.instagram.com/khotseaw._", linkText: "ติดตามบน Instagram" },
 ];
+// ─────────────────────────────────────────────────────────────────────
 
 const INTERVAL_MS = 2 * 60 * 1000;
 const AUTO_HIDE_MS = 15000;
 
 export default function MerchPopup() {
   const [visible, setVisible] = useState(false);
-  const [imgSrc, setImgSrc] = useState(IMAGES[0]);
+  const [ad, setAd] = useState(ADS[0]);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  function pickRandom(current: string) {
-    const pool = IMAGES.filter((img) => img !== current);
+  function pickRandom(current: typeof ADS[0]) {
+    const pool = ADS.filter((a) => a.image !== current.image);
     return pool[Math.floor(Math.random() * pool.length)];
   }
 
   function show() {
-    setImgSrc((cur) => pickRandom(cur));
+    setAd((cur) => pickRandom(cur));
     setVisible(true);
     hideTimer.current = setTimeout(() => {
       setVisible(false);
@@ -68,8 +71,8 @@ export default function MerchPopup() {
       {/* Left — product image */}
       <div className="relative w-36 shrink-0">
         <Image
-          src={imgSrc}
-          alt="เสื้อโคตรเสียว"
+          src={ad.image}
+          alt={ad.title}
           fill
           className="object-cover object-center"
           sizes="144px"
@@ -79,7 +82,7 @@ export default function MerchPopup() {
       {/* Right — info */}
       <div className="flex flex-col justify-between px-4 py-4 flex-1 min-w-0">
         <div>
-          <p className="text-gold text-[10px] tracking-[.18em] uppercase mb-1">Merch</p>
+          <p className="text-gold text-[10px] tracking-[.18em] uppercase mb-1">{ad.tag}</p>
           <h3
             className="font-bold leading-tight mb-1"
             style={{
@@ -91,16 +94,17 @@ export default function MerchPopup() {
               backgroundClip: "text",
             }}
           >
-            โคตรเสียว
+            {ad.title}
           </h3>
           <p className="text-ink2 text-xs leading-relaxed mb-3">
-            เสื้อยืด limited · 3 สี<br />
-            ดำ · ขาว · น้ำเงิน
+            {ad.desc.split("\n").map((line, i) => (
+              <span key={i}>{line}{i < ad.desc.split("\n").length - 1 && <br />}</span>
+            ))}
           </p>
         </div>
 
         <a
-          href="https://s.shopee.co.th/17ZEn4Vl5"
+          href={ad.link}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold transition-all duration-200 hover:-translate-y-0.5 hover:brightness-110"
@@ -110,10 +114,7 @@ export default function MerchPopup() {
             boxShadow: "0 4px 14px rgba(238,77,45,.4)",
           }}
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M21 7H3a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1h18a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1zm-9 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5zM7.5 7a4.5 4.5 0 0 1 9 0h-2a2.5 2.5 0 0 0-5 0h-2z"/>
-          </svg>
-          สั่งซื้อที่ Shopee
+          {ad.linkText}
         </a>
       </div>
 
