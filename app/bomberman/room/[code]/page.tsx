@@ -33,7 +33,7 @@ export default function RoomPage() {
   const [error, setError] = useState("");
   const [gameData, setGameData] = useState<any>(null);
   const [winner, setWinner] = useState<{ id: string; name: string } | null | undefined>(undefined);
-  const [gameStats, setGameStats] = useState<{ id: string; name: string; slot: number; isBot: boolean; alive: boolean; kills: number }[]>([]);
+  const [gameStats, setGameStats] = useState<{ id: string; name: string; slot: number; isBot: boolean; alive: boolean; kills: number; selfKill: boolean }[]>([]);
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
@@ -150,6 +150,15 @@ export default function RoomPage() {
     );
   }
 
+  const SELF_KILL_ROASTS = [
+    "💣 วางระเบิดแล้วลืมวิ่ง",
+    "🤦 ระเบิดตัวเองแบบมืออาชีพ",
+    "🤡 เหยื่อระเบิดของตัวเอง",
+    "💀 โคตรเสียว... ตัวเอง",
+    "😵 ศัตรูตัวฉกาจที่สุดคือตัวเอง",
+    "🪦 R.I.P. โดนระเบิดตัวเอง",
+  ];
+
   if (phase === "ended") {
     const sorted = [...gameStats].sort((a, b) => {
       if (a.alive !== b.alive) return a.alive ? -1 : 1;
@@ -190,8 +199,9 @@ export default function RoomPage() {
                   const color = PLAYER_COLORS[p.slot];
                   const isWinner = winner?.id === p.id;
                   return (
-                    <div key={p.id}
-                      className="grid items-center px-2 py-2 rounded-lg mb-1 text-sm"
+                    <div key={p.id} className="mb-1">
+                    <div
+                      className="grid items-center px-2 py-2 rounded-lg text-sm"
                       style={{
                         gridTemplateColumns: "1.5rem 1fr 3rem 4rem",
                         gap: "0 8px",
@@ -216,6 +226,12 @@ export default function RoomPage() {
                       <span className="text-center text-[11px]" style={{ color: p.alive ? "#4ade80" : "var(--color-ink3)" }}>
                         {p.alive ? "รอด ✓" : "ออก"}
                       </span>
+                    </div>
+                    {p.selfKill && (
+                      <div className="text-[10px] px-2 pb-1.5 -mt-0.5" style={{ color: "#fb923c" }}>
+                        {SELF_KILL_ROASTS[p.slot % SELF_KILL_ROASTS.length]}
+                      </div>
+                    )}
                     </div>
                   );
                 })}

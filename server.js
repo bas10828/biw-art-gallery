@@ -175,7 +175,7 @@ function initGameState(room) {
     playerStates[p.id] = {
       id: p.id, name: p.name, slot: p.slot, isBot: p.isBot,
       x: pos.x, y: pos.y,
-      alive: true, speed: 1, maxBombs: 1, range: 1, kills: 0,
+      alive: true, speed: 1, maxBombs: 1, range: 1, kills: 0, selfKill: false, hasWallbreak: false,
       activeBombs: 0,
     };
   });
@@ -229,7 +229,8 @@ function explodeBomb(gs, bomb, io, roomCode) {
           if (type === 'wallbreak') gs.wallbreakSpawned = true;
           gs.powerups.push({ x: nx, y: ny, type });
         }
-        break;
+        // wallbreak buff: pierce through soft blocks (don't stop)
+        if (!owner?.hasWallbreak) break;
       }
       // chain bomb?
       const chainBomb = gs.bombs.find((b) => b.x === nx && b.y === ny);
@@ -242,14 +243,15 @@ function explodeBomb(gs, bomb, io, roomCode) {
     Object.values(gs.players).forEach((p) => {
       if (p.alive && p.x === x && p.y === y) {
         p.alive = false;
-        if (owner && owner.id !== p.id) owner.kills++;
+        if (owner && owner.id === p.id) p.selfKill = true;
+        else if (owner) owner.kills++;
         io.to(roomCode).emit('playerDied', { playerId: p.id });
       }
     });
   });
 
   gs.explosions.push({ cells, timer: 500 });
-  io.to(roomCode).emit('explosion', { cells, bombId: bomb.id });
+  io.to(roomCode).emit('explosion', { cells, bombId: bomb.id, ownerId: bomb.ownerId });
   io.to(roomCode).emit('mapUpdate', { map: gs.map, powerups: gs.powerups });
 }
 
@@ -273,26 +275,8 @@ function movePlayer(gs, playerId, dir) {
     if (pu.type === 'bombs') p.maxBombs = Math.min(p.maxBombs + 1, 5);
     if (pu.type === 'speed') p.speed = Math.min(p.speed + 0.5, 3);
     if (pu.type === 'wallbreak') {
-      let cleared = 0;
-      [[1,0],[-1,0],[0,1],[0,-1]].forEach(([ddx, ddy]) => {
-        for (let i = 1; i <= p.range; i++) {
-          const bx = p.x + ddx * i, by = p.y + ddy * i;
-          if (bx < 0 || bx >= GRID_W || by < 0 || by >= GRID_H) break;
-          if (gs.map[by][bx] === CELL.HARD) break;
-          if (gs.map[by][bx] === CELL.SOFT) {
-            gs.map[by][bx] = CELL.EMPTY;
-            mapChanged = true;
-            cleared++;
-            if (Math.random() < 0.3) {
-              const pool = gs.wallbreakSpawned ? POWERUPS.filter(t => t !== 'wallbreak') : POWERUPS;
-              const type = pool[Math.floor(Math.random() * pool.length)];
-              if (type === 'wallbreak') gs.wallbreakSpawned = true;
-              gs.powerups.push({ x: bx, y: by, type });
-            }
-          }
-        }
-      });
-      if (cleared > 0) wallbreakUser = { name: p.name, cleared };
+      p.hasWallbreak = true;
+      wallbreakUser = { name: p.name, cleared: 0 };
     }
     gs.powerups.splice(pIdx, 1);
   }
@@ -318,7 +302,8 @@ function isInBlastZone(gs, cx, cy) {
         if (nx < 0||ny < 0||nx >= GRID_W||ny >= GRID_H) break;
         if (gs.map[ny][nx] === CELL.HARD) break;
         if (nx === cx && ny === cy) return true;
-        if (gs.map[ny][nx] === CELL.SOFT) break;
+        const bOwner = gs.players[b.ownerId];
+        if (gs.map[ny][nx] === CELL.SOFT && !bOwner?.hasWallbreak) break;
       }
     }
   }
@@ -494,7 +479,7 @@ function startGameLoop(room, io) {
       r.phase = 'ended';
       const winner = alive[0] || null;
       const stats = Object.values(gs.players).map((p) => ({
-        id: p.id, name: p.name, slot: p.slot, isBot: p.isBot, alive: p.alive, kills: p.kills,
+        id: p.id, name: p.name, slot: p.slot, isBot: p.isBot, alive: p.alive, kills: p.kills, selfKill: p.selfKill,
       }));
       io.to(r.code).emit('gameOver', { winner: winner ? { id: winner.id, name: winner.name } : null, stats });
       clearInterval(timer); gameLoops.delete(r.code);
@@ -693,10 +678,10 @@ function setupSocket(io) {
         io.to(room.code).emit('playerMoved', { playerId: socket.id, x: p.x, y: p.y });
         if (mapChanged) {
           io.to(room.code).emit('mapUpdate', { map: room.gameState.map, powerups: room.gameState.powerups });
-          if (wallbreakUser) io.to(room.code).emit('wallbreakUsed', { ...wallbreakUser, playerId: socket.id });
         } else {
           io.to(room.code).emit('powerupsUpdate', { powerups: room.gameState.powerups });
         }
+        if (wallbreakUser) io.to(room.code).emit('wallbreakUsed', { ...wallbreakUser, playerId: socket.id });
       }
     });
 

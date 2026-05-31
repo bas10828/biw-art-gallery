@@ -52,6 +52,25 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
   const imgCache = useRef<Map<string, HTMLImageElement>>(new Map());
   const code = room.code;
 
+  // ── Smooth movement: per-player tween data ──
+  type Tween = { srcX: number; srcY: number; dstX: number; dstY: number; startMs: number };
+  const tweens = useRef<Map<string, Tween>>(new Map());
+
+  // ── Particle system ──
+  type Particle = { cx: number; cy: number; vcx: number; vcy: number; life: number; maxLife: number; r: number; color: string };
+  const particles = useRef<Particle[]>([]);
+
+  // ── Screen shake ──
+  const shakeRef = useRef({ until: 0 });
+  const lastFrameMs = useRef(0);
+
+  // ── Speed trail: last N display positions per player ──
+  type TrailPt = { x: number; y: number; t: number };
+  const trailHistory = useRef<Map<string, TrailPt[]>>(new Map());
+
+  // ── Explosion owner tracking for colored effects ──
+  const explosionOwners = useRef<Map<number, string>>(new Map()); // bombId → ownerId, cleared after explosion
+
   // ── Preload artwork images for powerups ──
   useEffect(() => {
     POWERUP_ART.forEach((art) => {
@@ -110,17 +129,76 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
       stateRef.current = { ...stateRef.current, players, bombs };
     });
     socket.on("playerMoved", ({ playerId, x, y }: any) => {
-      if (stateRef.current.players[playerId]) {
-        stateRef.current.players[playerId].x = x;
-        stateRef.current.players[playerId].y = y;
-      }
+      const p = stateRef.current.players[playerId];
+      if (!p) return;
+      // get current visual position for smooth src
+      const prev = tweens.current.get(playerId);
+      const t = prev ? Math.min(1, (Date.now() - prev.startMs) / 160) : 1;
+      const ease = t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
+      const curX = prev ? prev.srcX + (prev.dstX - prev.srcX) * ease : p.x;
+      const curY = prev ? prev.srcY + (prev.dstY - prev.srcY) * ease : p.y;
+      tweens.current.set(playerId, { srcX: curX, srcY: curY, dstX: x, dstY: y, startMs: Date.now() });
+      p.x = x; p.y = y;
     });
     socket.on("bombPlaced", ({ bomb }: any) => {
       stateRef.current.bombs = [...stateRef.current.bombs, bomb];
     });
-    socket.on("explosion", ({ cells, bombId }: any) => {
+    socket.on("explosion", ({ cells, bombId, ownerId }: any) => {
       stateRef.current.bombs = stateRef.current.bombs.filter((b) => b.id !== bombId);
       explosionsRef.current.push({ cells, timer: 500 });
+
+      const owner = ownerId ? stateRef.current.players[ownerId] : null;
+      const ownerRange = owner?.range ?? 1;
+      const ownerBombs = owner?.maxBombs ?? 1;
+      const ownerWallbreak = ownerId ? wallbreakLabels.current.has(ownerId) : false;
+      const ownerColor = owner ? PLAYER_COLORS[owner.slot] : "#ff6418";
+
+      const MAX_P = 80;
+      const basePerCell = Math.min(4, Math.floor(MAX_P / Math.max(1, cells.length)));
+
+      cells.forEach(({ x, y }: { x: number; y: number }) => {
+        const cx = x + 0.5, cy = y + 0.5;
+        // base fire particles
+        const baseColors = ["#ffdc64", "#ff6418", "#ff3300", "#ffaa33"];
+        for (let i = 0; i < basePerCell && particles.current.length < MAX_P; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const spd = 0.003 + Math.random() * 0.005;
+          particles.current.push({ cx, cy, vcx: Math.cos(angle)*spd, vcy: Math.sin(angle)*spd,
+            life: 300+Math.random()*250, maxLife: 550, r: 0.05+Math.random()*0.06,
+            color: baseColors[Math.floor(Math.random()*baseColors.length)] });
+        }
+        // range ≥ 3: red wave particles
+        if (ownerRange >= 3 && particles.current.length < MAX_P) {
+          for (let i = 0; i < 2; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            particles.current.push({ cx, cy, vcx: Math.cos(angle)*0.007, vcy: Math.sin(angle)*0.007,
+              life: 200+Math.random()*150, maxLife: 350, r: 0.09+Math.random()*0.05, color: "#f87171" });
+          }
+        }
+        // maxBombs > 1: purple sparks
+        if (ownerBombs > 1 && particles.current.length < MAX_P) {
+          for (let i = 0; i < ownerBombs - 1 && i < 3; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            particles.current.push({ cx, cy, vcx: Math.cos(angle)*0.006, vcy: Math.sin(angle)*0.006,
+              life: 250+Math.random()*200, maxLife: 450, r: 0.07+Math.random()*0.04, color: "#c084fc" });
+          }
+        }
+        // wallbreak: gold star burst
+        if (ownerWallbreak && particles.current.length < MAX_P) {
+          for (let i = 0; i < 3; i++) {
+            const angle = (i / 3) * Math.PI * 2 + Math.random() * 0.5;
+            particles.current.push({ cx, cy, vcx: Math.cos(angle)*0.009, vcy: Math.sin(angle)*0.009,
+              life: 400+Math.random()*200, maxLife: 600, r: 0.1, color: "#d4a843" });
+          }
+        }
+      });
+
+      // screen shake near my player
+      const myP = stateRef.current.players[myId];
+      if (myP?.alive && cells.some((c: { x: number; y: number }) => Math.abs(c.x - myP.x) + Math.abs(c.y - myP.y) < 4)) {
+        shakeRef.current.until = Date.now() + 220;
+      }
+      void ownerColor;
     });
     socket.on("mapUpdate", ({ map, powerups }: any) => {
       stateRef.current.map = map;
@@ -169,24 +247,29 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
     return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); };
   }, [isSpectator, dead, code, socket]);
 
-  // ── Move loop ──
+  const joystickDirRef = useRef<string | null>(null);
+
+  // ── Move loop — speed-aware ──
   useEffect(() => {
     if (isSpectator || dead) return;
-    const MOVE_INTERVAL = 160;
     const interval = setInterval(() => {
       const now = Date.now();
-      if (now - lastMoveRef.current < MOVE_INTERVAL) return;
-      for (const [key, [dx, dy]] of Object.entries(DIRS)) {
-        if (keysRef.current.has(key)) {
-          const dir = dx === 1 ? "right" : dx === -1 ? "left" : dy === 1 ? "down" : "up";
-          socket.emit("move", { code, dir });
-          lastMoveRef.current = now;
-          break;
-        }
-      }
-    }, 50);
+      const speed = stateRef.current.players[myId]?.speed ?? 1;
+      const moveInterval = Math.max(80, Math.round(160 / speed));
+      if (now - lastMoveRef.current < moveInterval) return;
+      // joystick takes priority over keyboard
+      const dir = joystickDirRef.current
+        ?? (() => {
+          for (const [key, [dx, dy]] of Object.entries(DIRS)) {
+            if (keysRef.current.has(key))
+              return dx === 1 ? "right" : dx === -1 ? "left" : dy === 1 ? "down" : "up";
+          }
+          return null;
+        })();
+      if (dir) { socket.emit("move", { code, dir }); lastMoveRef.current = now; }
+    }, 40);
     return () => clearInterval(interval);
-  }, [isSpectator, dead, code, socket]);
+  }, [isSpectator, dead, code, socket, myId]);
 
   // ── Canvas render ──
   useEffect(() => {
@@ -199,8 +282,28 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
     canvas.width = W;
     canvas.height = H;
 
+    function getDispPos(p: { id: string; x: number; y: number }) {
+      const tw = tweens.current.get(p.id);
+      if (!tw) return { x: p.x, y: p.y };
+      const t = Math.min(1, (Date.now() - tw.startMs) / 160);
+      const e = t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
+      return { x: tw.srcX + (tw.dstX - tw.srcX) * e, y: tw.srcY + (tw.dstY - tw.srcY) * e };
+    }
+
     function draw() {
+      const now = Date.now();
+      const dt = lastFrameMs.current ? Math.min(now - lastFrameMs.current, 50) : 16;
+      lastFrameMs.current = now;
       const gs = stateRef.current;
+
+      // screen shake
+      const shaking = now < shakeRef.current.until;
+      ctx.save();
+      if (shaking) {
+        const intensity = (1 - (now - (shakeRef.current.until - 220)) / 220) * 3.5;
+        ctx.translate((Math.random() - 0.5) * intensity, (Math.random() - 0.5) * intensity);
+      }
+
       ctx.clearRect(0, 0, W, H);
 
       // background
@@ -282,28 +385,91 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
         ctx.fillText(pu.type === "range" ? "↔" : pu.type === "bombs" ? "+" : pu.type === "wallbreak" ? "✦" : "⚡", bx, by);
       });
 
-      // bombs
+      // bombs — visuals stack based on owner powerups
       gs.bombs.forEach((bomb) => {
         const px = bomb.x * CS + CS / 2, py = bomb.y * CS + CS / 2;
-        const pulse = 0.85 + 0.15 * Math.sin(Date.now() / 150);
-        ctx.beginPath();
-        ctx.arc(px, py, CS * 0.36 * pulse, 0, Math.PI * 2);
-        ctx.fillStyle = "#1a0a0a";
-        ctx.fill();
-        ctx.strokeStyle = "#f87171";
-        ctx.lineWidth = 2.5;
-        ctx.stroke();
+        const owner = gs.players[bomb.ownerId];
+        const bRange = owner?.range ?? 1;
+        const bBombs = owner?.maxBombs ?? 1;
+        const bWallbreak = bomb.ownerId ? wallbreakLabels.current.has(bomb.ownerId) : false;
+        const pulse = 0.85 + 0.15 * Math.sin(now / 150);
+
+        // range ≥ 2: red outer glow (scales with range)
+        if (bRange >= 2) {
+          const glowR = CS * 0.55 * (1 + (bRange - 2) * 0.1);
+          const g = ctx.createRadialGradient(px, py, CS * 0.2, px, py, glowR);
+          g.addColorStop(0, `rgba(248,113,113,${0.15 + (bRange-2)*0.05})`);
+          g.addColorStop(1, "rgba(248,113,113,0)");
+          ctx.beginPath(); ctx.arc(px, py, glowR, 0, Math.PI * 2);
+          ctx.fillStyle = g; ctx.fill();
+        }
+        // maxBombs > 1: purple glow
+        if (bBombs > 1) {
+          const g = ctx.createRadialGradient(px, py, CS*0.1, px, py, CS*0.5);
+          g.addColorStop(0, `rgba(192,132,252,${0.1*(bBombs-1)})`);
+          g.addColorStop(1, "rgba(192,132,252,0)");
+          ctx.beginPath(); ctx.arc(px, py, CS*0.5, 0, Math.PI*2);
+          ctx.fillStyle = g; ctx.fill();
+        }
+        // wallbreak: gold shimmer ring
+        if (bWallbreak) {
+          ctx.beginPath(); ctx.arc(px, py, CS*0.46*pulse, 0, Math.PI*2);
+          ctx.strokeStyle = `rgba(212,168,67,0.5)`; ctx.lineWidth = 1.5; ctx.stroke();
+        }
+
+        // range preview dots — only owner sees
+        if (bRange >= 2 && bomb.ownerId === myId) {
+          [[1,0],[-1,0],[0,1],[0,-1]].forEach(([dx,dy]) => {
+            for (let i = 1; i <= bRange; i++) {
+              const nx = bomb.x+dx*i, ny = bomb.y+dy*i;
+              if (nx<0||ny<0||nx>=GRID_W||ny>=GRID_H) break;
+              if (gs.map[ny][nx] === 1) break;
+              ctx.beginPath();
+              ctx.arc(nx*CS+CS/2, ny*CS+CS/2, CS*0.07, 0, Math.PI*2);
+              ctx.fillStyle = `rgba(248,113,113,${0.55 - i*0.05})`; ctx.fill();
+              if (gs.map[ny][nx] === 2) break;
+            }
+          });
+        }
+
+        // bomb body
+        ctx.beginPath(); ctx.arc(px, py, CS*0.36*pulse, 0, Math.PI*2);
+        ctx.fillStyle = "#1a0a0a"; ctx.fill();
+
+        // interior buff colors — colored arc segments (everyone sees, no level info)
+        const buffColors: string[] = [];
+        if (bRange > 1) buffColors.push("#f87171");   // red = range
+        if (bBombs > 1) buffColors.push("#c084fc");   // purple = bombs
+        if (bWallbreak) buffColors.push("#d4a843");   // gold = wallbreak
+        if (buffColors.length > 0) {
+          const innerR = CS * 0.24 * pulse;
+          const sliceAngle = (Math.PI * 2) / buffColors.length;
+          buffColors.forEach((col, i) => {
+            const start = -Math.PI / 2 + i * sliceAngle;
+            ctx.beginPath();
+            ctx.moveTo(px, py);
+            ctx.arc(px, py, innerR, start, start + sliceAngle);
+            ctx.closePath();
+            ctx.fillStyle = col + "bb"; ctx.fill();
+          });
+          // center shine
+          ctx.beginPath(); ctx.arc(px, py, innerR * 0.25, 0, Math.PI * 2);
+          ctx.fillStyle = "rgba(255,255,255,0.4)"; ctx.fill();
+        }
+
+        // outline — color reflects dominant buff
+        ctx.beginPath(); ctx.arc(px, py, CS*0.36*pulse, 0, Math.PI*2);
+        ctx.strokeStyle = bWallbreak ? "#d4a843" : bBombs > 1 ? "#c084fc" : bRange > 1 ? "#f87171" : "#f87171";
+        ctx.lineWidth = 2.5; ctx.stroke();
         // fuse
         ctx.beginPath();
-        ctx.moveTo(px + 4, py - CS * 0.3);
-        ctx.quadraticCurveTo(px + 10, py - CS * 0.45, px + 6, py - CS * 0.5);
-        ctx.strokeStyle = "#fbbf24";
-        ctx.lineWidth = 2;
-        ctx.stroke();
+        ctx.moveTo(px+4, py-CS*0.3);
+        ctx.quadraticCurveTo(px+10, py-CS*0.45, px+6, py-CS*0.5);
+        ctx.strokeStyle = bWallbreak ? "#d4a843" : "#fbbf24";
+        ctx.lineWidth = 2; ctx.stroke();
       });
 
       // explosions
-      const now = Date.now();
       explosionsRef.current = explosionsRef.current.filter((e) => {
         e.timer -= 16;
         return e.timer > 0;
@@ -324,16 +490,42 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
         });
       });
 
-      // players — chibi character (head + body)
+      // players — chibi character (head + body), smooth interpolated position
       Object.values(gs.players).forEach((p) => {
         if (!p.alive) return;
-        const cx = p.x * CS + CS / 2, cy = p.y * CS + CS / 2;
+        const dp = getDispPos(p);
+        const cx = dp.x * CS + CS / 2, cy = dp.y * CS + CS / 2;
         const color = PLAYER_COLORS[p.slot];
         const isMe = p.id === myId;
         const headR = CS * 0.27;
         const headY = cy - CS * 0.12;
         const bodyW = CS * 0.32, bodyH = CS * 0.22;
         const bodyY = cy + CS * 0.16;
+        const pRange = p.range ?? 1;
+        const pBombs = p.maxBombs ?? 1;
+        const pSpeed = p.speed ?? 1;
+        const pWallbreak = wallbreakLabels.current.has(p.id);
+
+        // speed trail (green ghosts) — update history
+        if (pSpeed > 1) {
+          const hist = trailHistory.current.get(p.id) ?? [];
+          hist.push({ x: cx, y: cy, t: now });
+          const cutoff = now - 220;
+          const trimmed = hist.filter(h => h.t > cutoff).slice(-4);
+          trailHistory.current.set(p.id, trimmed);
+          trimmed.forEach((h, i) => {
+            const age = (now - h.t) / 220;
+            ctx.beginPath(); ctx.arc(h.x, h.y, headR * (1 - age * 0.4), 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(74,222,128,${0.18 * (1 - age)})`; ctx.fill();
+          });
+        }
+
+        // range ≥ 3: red outer aura ring
+        if (pRange >= 3) {
+          ctx.beginPath(); ctx.arc(cx, cy, CS * (0.55 + (pRange-3)*0.04), 0, Math.PI * 2);
+          ctx.strokeStyle = `rgba(248,113,113,${0.25 + (pRange-3)*0.05})`;
+          ctx.lineWidth = 1.5; ctx.stroke();
+        }
 
         // ground shadow
         ctx.beginPath();
@@ -380,6 +572,28 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
           ctx.fillText("✦", cx, headY - headR - CS * 0.14);
         }
 
+        // maxBombs > 1: purple ×N badge (bottom-right of body)
+        if (pBombs > 1) {
+          const bx = cx + headR * 0.85, by = bodyY + bodyH * 0.6;
+          const br = CS * 0.16;
+          ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI * 2);
+          ctx.fillStyle = "#c084fc"; ctx.fill();
+          ctx.font = `bold ${Math.max(7, CS * 0.18)}px sans-serif`;
+          ctx.textAlign = "center"; ctx.textBaseline = "middle";
+          ctx.fillStyle = "#fff"; ctx.fillText(`×${pBombs}`, bx, by);
+        }
+        // speed > 1: green speed lines on body (right side)
+        if (pSpeed > 1) {
+          const lines = Math.floor(pSpeed);
+          for (let i = 0; i < lines; i++) {
+            const ly = bodyY - bodyH*0.3 + i * bodyH*0.35;
+            ctx.beginPath();
+            ctx.moveTo(cx + bodyW*0.6, ly);
+            ctx.lineTo(cx + bodyW*1.1, ly - CS*0.04);
+            ctx.strokeStyle = `rgba(74,222,128,0.7)`; ctx.lineWidth = 1.5; ctx.stroke();
+          }
+        }
+
         // "โคตรเสียว" wallbreak label
         const showWb = wallbreakLabels.current.has(p.id);
         const nameBaseY = headY - headR - (isMe ? CS * 0.28 : CS * 0.06);
@@ -407,6 +621,18 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
         ctx.fillText(p.name, cx, nameY);
       });
 
+      // particles
+      particles.current = particles.current.filter((p) => { p.life -= dt; p.cx += p.vcx * dt; p.cy += p.vcy * dt; return p.life > 0; });
+      particles.current.forEach((p) => {
+        const alpha = p.life / p.maxLife;
+        const hex = Math.floor(alpha * 255).toString(16).padStart(2, "0");
+        ctx.beginPath();
+        ctx.arc(p.cx * CS, p.cy * CS, p.r * CS, 0, Math.PI * 2);
+        ctx.fillStyle = p.color + hex;
+        ctx.fill();
+      });
+
+      ctx.restore(); // end shake transform
       animRef.current = requestAnimationFrame(draw);
     }
 
@@ -466,9 +692,9 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
 
       {/* Game area: D-pad | Canvas | Bomb */}
       <div className="flex items-center justify-center gap-3">
-        {/* Left D-pad */}
+        {/* Left — Virtual Joystick */}
         {showControls && (
-          <DPad onMove={(dir) => socket.emit("move", { code, dir })} />
+          <VirtualJoystick dirRef={joystickDirRef} />
         )}
 
         {/* Canvas */}
@@ -495,20 +721,82 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
   );
 }
 
-// ── D-pad (left side) ──
-function DPad({ onMove }: { onMove: (dir: string) => void }) {
-  const S = 52;
-  const btn = (dir: string, label: string) => (
-    <button
-      style={{ width: S, height: S, background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.15)", borderRadius: 10, color: "#fff", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center", touchAction: "none", userSelect: "none" }}
-      onPointerDown={(e) => { e.preventDefault(); onMove(dir); }}
-    >{label}</button>
-  );
+// ── Virtual Joystick ──
+function VirtualJoystick({ dirRef }: { dirRef: React.MutableRefObject<string | null> }) {
+  const OUTER = 56; // outer radius px
+  const KNOB = 22;  // knob radius px
+  const DEAD = 0.28; // deadzone fraction
+  const [knob, setKnob] = useState({ x: 0, y: 0 });
+  const activePtr = useRef<number | null>(null);
+  const baseRef = useRef<{ x: number; y: number } | null>(null);
+
+  function getDir(dx: number, dy: number): string | null {
+    if (Math.sqrt(dx * dx + dy * dy) < OUTER * DEAD) return null;
+    const a = Math.atan2(dy, dx) * 180 / Math.PI;
+    if (a >= -45 && a < 45) return "right";
+    if (a >= 45 && a < 135) return "down";
+    if (a >= 135 || a < -135) return "left";
+    return "up";
+  }
+
+  function onDown(e: React.PointerEvent) {
+    e.preventDefault();
+    if (activePtr.current !== null) return;
+    activePtr.current = e.pointerId;
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    baseRef.current = { x: e.clientX, y: e.clientY };
+    setKnob({ x: 0, y: 0 });
+  }
+  function onMove(e: React.PointerEvent) {
+    if (e.pointerId !== activePtr.current || !baseRef.current) return;
+    e.preventDefault();
+    const dx = e.clientX - baseRef.current.x;
+    const dy = e.clientY - baseRef.current.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const clamped = Math.min(dist, OUTER);
+    const kx = dist > 0 ? (dx / dist) * clamped : 0;
+    const ky = dist > 0 ? (dy / dist) * clamped : 0;
+    setKnob({ x: kx, y: ky });
+    dirRef.current = getDir(kx, ky);
+  }
+  function onUp(e: React.PointerEvent) {
+    if (e.pointerId !== activePtr.current) return;
+    activePtr.current = null;
+    baseRef.current = null;
+    dirRef.current = null;
+    setKnob({ x: 0, y: 0 });
+  }
+
+  const SIZE = OUTER * 2;
   return (
-    <div style={{ display: "grid", gridTemplateColumns: `repeat(3,${S}px)`, gap: 4 }}>
-      <div />{btn("up", "▲")}<div />
-      {btn("left", "◀")}<div style={{ width: S, height: S, background: "rgba(0,0,0,.2)", borderRadius: 10 }} />{btn("right", "▶")}
-      <div />{btn("down", "▼")}<div />
+    <div
+      style={{ width: SIZE, height: SIZE, flexShrink: 0, touchAction: "none", userSelect: "none", position: "relative" }}
+      onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
+    >
+      {/* outer ring */}
+      <div style={{
+        position: "absolute", inset: 0, borderRadius: "50%",
+        background: "rgba(255,255,255,0.07)",
+        border: "2px solid rgba(255,255,255,0.18)",
+      }} />
+      {/* crosshair lines */}
+      <div style={{ position: "absolute", left: "50%", top: "18%", bottom: "18%", width: 1, background: "rgba(255,255,255,0.1)", transform: "translateX(-50%)" }} />
+      <div style={{ position: "absolute", top: "50%", left: "18%", right: "18%", height: 1, background: "rgba(255,255,255,0.1)", transform: "translateY(-50%)" }} />
+      {/* knob */}
+      <div style={{
+        position: "absolute",
+        width: KNOB * 2, height: KNOB * 2,
+        borderRadius: "50%",
+        left: OUTER - KNOB + knob.x,
+        top: OUTER - KNOB + knob.y,
+        background: knob.x === 0 && knob.y === 0
+          ? "rgba(255,255,255,0.25)"
+          : "rgba(212,168,67,0.85)",
+        border: "2px solid rgba(255,255,255,0.5)",
+        boxShadow: knob.x === 0 && knob.y === 0 ? "none" : "0 0 12px rgba(212,168,67,0.6)",
+        transition: "background 0.1s, box-shadow 0.1s",
+        pointerEvents: "none",
+      }} />
     </div>
   );
 }
