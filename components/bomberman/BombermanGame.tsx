@@ -128,7 +128,7 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
 
   // ── Socket events ──
   useEffect(() => {
-    socket.on("posUpdate", ({ players, bombs }: any) => {
+    const onPosUpdate = ({ players, bombs }: any) => {
       if (bombs) stateRef.current.bombs = bombs;
       Object.entries(players).forEach(([pid, pos]: any) => {
         const p = stateRef.current.players[pid];
@@ -153,11 +153,11 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
           else if (Math.hypot(mp.x - pos.x, mp.y - pos.y) > 1.2) { mp.x = pos.x; mp.y = pos.y; }
         }
       });
-    });
-    socket.on("bombPlaced", ({ bomb }: any) => {
+    };
+    const onBombPlaced = ({ bomb }: any) => {
       stateRef.current.bombs = [...stateRef.current.bombs, bomb];
-    });
-    socket.on("explosion", ({ cells, bombId, ownerId }: any) => {
+    };
+    const onExplosion = ({ cells, bombId, ownerId }: any) => {
       stateRef.current.bombs = stateRef.current.bombs.filter((b) => b.id !== bombId);
       explosionsRef.current.push({ cells, timer: 500 });
 
@@ -213,20 +213,20 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
         shakeRef.current.until = Date.now() + 220;
       }
       void ownerColor;
-    });
-    socket.on("mapUpdate", ({ map, powerups }: any) => {
+    };
+    const onMapUpdate = ({ map, powerups }: any) => {
       stateRef.current.map = map;
       stateRef.current.powerups = powerups;
-    });
-    socket.on("powerupsUpdate", ({ powerups }: any) => {
+    };
+    const onPowerupsUpdate = ({ powerups }: any) => {
       stateRef.current.powerups = powerups;
-    });
-    socket.on("playerDied", ({ playerId }: any) => {
+    };
+    const onPlayerDied = ({ playerId }: any) => {
       if (stateRef.current.players[playerId]) stateRef.current.players[playerId].alive = false;
       if (playerId === myId) setDead(true);
-    });
-    socket.on("gameOver", ({ winner: w }: any) => setWinner(w ?? null));
-    socket.on("powerupCollected", ({ x, y, type }: { x: number; y: number; type: string }) => {
+    };
+    const onGameOver = ({ winner: w }: any) => setWinner(w ?? null);
+    const onPowerupCollected = ({ x, y, type }: { x: number; y: number; type: string }) => {
       const color = type === "range" ? "#f87171" : type === "bombs" ? "#c084fc" : type === "wallbreak" ? "#d4a843" : "#4ade80";
       for (let i = 0; i < 12; i++) {
         const angle = (i / 12) * Math.PI * 2;
@@ -234,23 +234,41 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
         particles.current.push({ cx: x, cy: y, vcx: Math.cos(angle)*spd, vcy: Math.sin(angle)*spd,
           life: 350+Math.random()*200, maxLife: 550, r: 0.07+Math.random()*0.06, color });
       }
-    });
-    socket.on("wallbreakUsed", ({ name, cleared, playerId }: { name: string; cleared: number; playerId: string }) => {
+    };
+    const onWallbreakUsed = ({ name, cleared, playerId }: { name: string; cleared: number; playerId: string }) => {
       if (toastTimer.current) clearTimeout(toastTimer.current);
       setToast(`💥 ${name} WALLBREAK! (${cleared} กำแพง)`);
       toastTimer.current = setTimeout(() => setToast(null), 2500);
       wallbreakLabels.current.add(playerId);
-    });
-    socket.on("suddenDeath", ({ cells, map }: any) => {
+    };
+    const onSuddenDeath = ({ cells, map }: any) => {
       stateRef.current.map = map;
       setSuddenDeathCells(cells);
       setTimeout(() => setSuddenDeathCells([]), 800);
-    });
+    };
+
+    socket.on("posUpdate", onPosUpdate);
+    socket.on("bombPlaced", onBombPlaced);
+    socket.on("explosion", onExplosion);
+    socket.on("mapUpdate", onMapUpdate);
+    socket.on("powerupsUpdate", onPowerupsUpdate);
+    socket.on("playerDied", onPlayerDied);
+    socket.on("gameOver", onGameOver);
+    socket.on("powerupCollected", onPowerupCollected);
+    socket.on("wallbreakUsed", onWallbreakUsed);
+    socket.on("suddenDeath", onSuddenDeath);
+
     return () => {
-      socket.off("posUpdate"); socket.off("bombPlaced"); socket.off("powerupCollected");
-      socket.off("explosion"); socket.off("mapUpdate"); socket.off("powerupsUpdate");
-      socket.off("playerDied"); socket.off("gameOver"); socket.off("suddenDeath");
-      socket.off("wallbreakUsed");
+      socket.off("posUpdate", onPosUpdate);
+      socket.off("bombPlaced", onBombPlaced);
+      socket.off("explosion", onExplosion);
+      socket.off("mapUpdate", onMapUpdate);
+      socket.off("powerupsUpdate", onPowerupsUpdate);
+      socket.off("playerDied", onPlayerDied);
+      socket.off("gameOver", onGameOver);
+      socket.off("powerupCollected", onPowerupCollected);
+      socket.off("wallbreakUsed", onWallbreakUsed);
+      socket.off("suddenDeath", onSuddenDeath);
     };
   }, [socket, myId]);
 
