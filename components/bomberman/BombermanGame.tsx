@@ -128,28 +128,25 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
 
   // ── Socket events ──
   useEffect(() => {
-    socket.on("gameState", ({ players, bombs }: any) => {
-      stateRef.current = { ...stateRef.current, players, bombs };
-    });
-    socket.on("playerMoved", ({ playerId, x, y }: any) => {
-      const p = stateRef.current.players[playerId];
-      if (!p) return;
-      // get current visual position for smooth src
-      const prev = tweens.current.get(playerId);
-      const t = prev ? Math.min(1, (Date.now() - prev.startMs) / 160) : 1;
-      const ease = t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
-      const curX = prev ? prev.srcX + (prev.dstX - prev.srcX) * ease : p.x;
-      const curY = prev ? prev.srcY + (prev.dstY - prev.srcY) * ease : p.y;
-      tweens.current.set(playerId, { srcX: curX, srcY: curY, dstX: x, dstY: y, startMs: Date.now(), dur: currentMoveInterval.current });
-      p.x = x; p.y = y;
-      // reconcile client prediction for local player
-      if (playerId === myId) {
-        const mp = myPredPos.current;
-        if (!mp.init) { mp.x = x; mp.y = y; mp.init = true; }
-        else if (Math.abs(mp.x - x) > 1.5 || Math.abs(mp.y - y) > 1.5) {
-          mp.x = x; mp.y = y; // snap on large discrepancy
+    socket.on("posUpdate", ({ players, bombs }: any) => {
+      if (bombs) stateRef.current.bombs = bombs;
+      Object.entries(players).forEach(([pid, pos]: any) => {
+        const p = stateRef.current.players[pid];
+        if (!p) return;
+        const prev = tweens.current.get(pid);
+        const t = prev ? Math.min(1, (Date.now() - prev.startMs) / (prev.dur ?? 100)) : 1;
+        const e = t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
+        const curX = prev ? prev.srcX + (prev.dstX - prev.srcX) * e : p.x;
+        const curY = prev ? prev.srcY + (prev.dstY - prev.srcY) * e : p.y;
+        tweens.current.set(pid, { srcX: curX, srcY: curY, dstX: pos.x, dstY: pos.y, startMs: Date.now(), dur: 30 });
+        Object.assign(p, pos);
+        // reconcile local prediction
+        if (pid === myId) {
+          const mp = myPredPos.current;
+          if (!mp.init) { mp.x = pos.x; mp.y = pos.y; mp.init = true; }
+          else if (Math.hypot(mp.x - pos.x, mp.y - pos.y) > 1.2) { mp.x = pos.x; mp.y = pos.y; }
         }
-      }
+      });
     });
     socket.on("bombPlaced", ({ bomb }: any) => {
       stateRef.current.bombs = [...stateRef.current.bombs, bomb];
@@ -223,6 +220,15 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
       if (playerId === myId) setDead(true);
     });
     socket.on("gameOver", ({ winner: w }: any) => setWinner(w ?? null));
+    socket.on("powerupCollected", ({ x, y, type }: { x: number; y: number; type: string }) => {
+      const color = type === "range" ? "#f87171" : type === "bombs" ? "#c084fc" : type === "wallbreak" ? "#d4a843" : "#4ade80";
+      for (let i = 0; i < 12; i++) {
+        const angle = (i / 12) * Math.PI * 2;
+        const spd = 0.005 + Math.random() * 0.008;
+        particles.current.push({ cx: x, cy: y, vcx: Math.cos(angle)*spd, vcy: Math.sin(angle)*spd,
+          life: 350+Math.random()*200, maxLife: 550, r: 0.07+Math.random()*0.06, color });
+      }
+    });
     socket.on("wallbreakUsed", ({ name, cleared, playerId }: { name: string; cleared: number; playerId: string }) => {
       if (toastTimer.current) clearTimeout(toastTimer.current);
       setToast(`💥 ${name} WALLBREAK! (${cleared} กำแพง)`);
@@ -235,7 +241,7 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
       setTimeout(() => setSuddenDeathCells([]), 800);
     });
     return () => {
-      socket.off("gameState"); socket.off("playerMoved"); socket.off("bombPlaced");
+      socket.off("posUpdate"); socket.off("bombPlaced"); socket.off("powerupCollected");
       socket.off("explosion"); socket.off("mapUpdate"); socket.off("powerupsUpdate");
       socket.off("playerDied"); socket.off("gameOver"); socket.off("suddenDeath");
       socket.off("wallbreakUsed");
@@ -260,17 +266,13 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
 
   const joystickDirRef = useRef<string | null>(null);
   const prevJoystickDir = useRef<string | null>(null);
-  const currentMoveInterval = useRef(130);
+  const currentMoveInterval = useRef(50);
+  const lastDirRef = useRef<string | null>(null);
 
-  // ── Move loop — speed-aware ──
+  // ── Direction loop — send setDir on change ──
   useEffect(() => {
     if (isSpectator || dead) return;
     const interval = setInterval(() => {
-      const now = Date.now();
-      const speed = stateRef.current.players[myId]?.speed ?? 1;
-      const moveInterval = Math.max(60, Math.round(100 / speed));
-      currentMoveInterval.current = moveInterval;
-      if (now - lastMoveRef.current < moveInterval) return;
       const dir = joystickDirRef.current
         ?? (() => {
           for (const [key, [dx, dy]] of Object.entries(DIRS)) {
@@ -279,10 +281,15 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
           }
           return null;
         })();
-      if (dir) { socket.emit("move", { code, dir }); lastMoveRef.current = now; }
-    }, 30);
-    return () => clearInterval(interval);
-  }, [isSpectator, dead, code, socket, myId]);
+      if (dir !== lastDirRef.current) {
+        lastDirRef.current = dir;
+        const dx = dir === "right" ? 1 : dir === "left" ? -1 : 0;
+        const dy = dir === "down" ? 1 : dir === "up" ? -1 : 0;
+        socket.emit("setDir", { code, dx, dy });
+      }
+    }, 16);
+    return () => { clearInterval(interval); socket.emit("setDir", { code, dx: 0, dy: 0 }); };
+  }, [isSpectator, dead, code, socket]);
 
   // ── Canvas render ──
   useEffect(() => {
@@ -296,9 +303,6 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
     canvas.height = H;
 
     function getDispPos(p: { id: string; x: number; y: number }) {
-      if (p.id === myId && myPredPos.current.init) {
-        return { x: myPredPos.current.x, y: myPredPos.current.y };
-      }
       const tw = tweens.current.get(p.id);
       if (!tw) return { x: p.x, y: p.y };
       const dur = tw.dur ?? 130;
@@ -562,43 +566,12 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
         });
       });
 
-      // ── update client-side predicted position for local player ──
-      if (!dead && !isSpectator) {
-        const myP = gs.players[myId];
-        if (myP?.alive) {
-          const mp = myPredPos.current;
-          if (!mp.init) { mp.x = myP.x; mp.y = myP.y; mp.init = true; }
-          const dir = joystickDirRef.current
-            ?? (() => { for (const [k,[kdx,kdy]] of Object.entries(DIRS)) { if (keysRef.current.has(k)) return kdx===1?"right":kdx===-1?"left":kdy===1?"down":"up"; } return null; })();
-          if (dir) {
-            const spd = (myP.speed ?? 1) / currentMoveInterval.current; // cells/ms
-            const ddx = dir==="right"?1:dir==="left"?-1:0;
-            const ddy = dir==="down"?1:dir==="up"?-1:0;
-            const nx = mp.x + ddx * spd * dt;
-            const ny = mp.y + ddy * spd * dt;
-            // wall check: peek 0.45 cells ahead in direction
-            const gcx = Math.floor(nx + ddx*0.45), gcy = Math.floor(ny + ddy*0.45);
-            const passable = gcx>=0&&gcy>=0&&gcx<GRID_W&&gcy<GRID_H
-              && gs.map[gcy][gcx]===0 && !gs.bombs.some((b:any)=>b.x===gcx&&b.y===gcy);
-            if (passable || (Math.floor(nx)===Math.floor(mp.x) && Math.floor(ny)===Math.floor(mp.y))) {
-              mp.x = nx; mp.y = ny;
-            }
-            // clamp: don't run more than 0.9 cells ahead of server
-            mp.x = Math.max(myP.x-0.9, Math.min(myP.x+0.9, mp.x));
-            mp.y = Math.max(myP.y-0.9, Math.min(myP.y+0.9, mp.y));
-          } else {
-            // settle toward server position when not moving
-            mp.x += (myP.x - mp.x) * Math.min(1, dt * 0.018);
-            mp.y += (myP.y - mp.y) * Math.min(1, dt * 0.018);
-          }
-        }
-      }
 
       // players — chibi character (head + body), smooth interpolated position
       Object.values(gs.players).forEach((p) => {
         if (!p.alive) return;
         const dp = getDispPos(p);
-        const cx = dp.x * CS + CS / 2, cy = dp.y * CS + CS / 2;
+        const cx = dp.x * CS, cy = dp.y * CS;
         const color = PLAYER_COLORS[p.slot];
         const isMe = p.id === myId;
         const pRange = p.range ?? 1;
@@ -915,9 +888,11 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
           <VirtualJoystick
             dirRef={joystickDirRef}
             onDirChange={(dir) => {
-              if (dir && !dead && !isSpectator) {
-                socket.emit("move", { code, dir });
-                lastMoveRef.current = Date.now();
+              if (!dead && !isSpectator) {
+                const dx = dir === "right" ? 1 : dir === "left" ? -1 : 0;
+                const dy = dir === "down" ? 1 : dir === "up" ? -1 : 0;
+                socket.emit("setDir", { code, dx, dy });
+                lastDirRef.current = dir;
               }
             }}
           />

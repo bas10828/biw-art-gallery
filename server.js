@@ -142,6 +142,78 @@ function allReady(room) {
 
 // ── Game Engine ────────────────────────────────────────────────────────────
 const CELL = { EMPTY: 0, HARD: 1, SOFT: 2 };
+const BASE_SPEED = 3.8; // cells/sec
+const PLAYER_R = 0.32;  // collision half-size
+
+function playerCell(p) { return { x: Math.floor(p.x), y: Math.floor(p.y) }; }
+
+function isSolid(gs, cx, cy, playerId) {
+  if (cx < 0 || cy < 0 || cx >= GRID_W || cy >= GRID_H) return true;
+  if (gs.map[cy][cx] !== CELL.EMPTY) return true;
+  if (gs.bombs.some(b => b.x === cx && b.y === cy && b.passFor !== playerId)) return true;
+  return false;
+}
+
+function physicsMove(gs, p, dt, playerId) {
+  if (!p.dx && !p.dy) return;
+  const spd = BASE_SPEED * (p.speed || 1) * dt / 1000;
+  const R = PLAYER_R;
+  let nx = p.x + p.dx * spd;
+  let ny = p.y + p.dy * spd;
+  // X collision + corner correction
+  if (p.dx) {
+    const ex = nx + (p.dx > 0 ? R : -R);
+    const cy1 = Math.floor(p.y - R + 0.01), cy2 = Math.floor(p.y + R - 0.01);
+    const cx = Math.floor(ex);
+    const b1 = isSolid(gs, cx, cy1, playerId), b2 = isSolid(gs, cx, cy2, playerId);
+    if (b1 || b2) {
+      nx = p.dx > 0 ? cx - R - 0.001 : cx + 1 + R + 0.001;
+      if (b1 !== b2) {
+        const openCY = b1 ? cy2 : cy1;
+        const targetY = openCY + 0.5;
+        const diff = targetY - p.y;
+        ny += Math.sign(diff) * Math.min(Math.abs(diff), spd * 2);
+      }
+    }
+  }
+  // Y collision + corner correction
+  if (p.dy) {
+    const ey = ny + (p.dy > 0 ? R : -R);
+    const cx1 = Math.floor(nx - R + 0.01), cx2 = Math.floor(nx + R - 0.01);
+    const cy = Math.floor(ey);
+    const b1 = isSolid(gs, cx1, cy, playerId), b2 = isSolid(gs, cx2, cy, playerId);
+    if (b1 || b2) {
+      ny = p.dy > 0 ? cy - R - 0.001 : cy + 1 + R + 0.001;
+      if (b1 !== b2) {
+        const openCX = b1 ? cx2 : cx1;
+        const targetX = openCX + 0.5;
+        const diff = targetX - nx;
+        nx += Math.sign(diff) * Math.min(Math.abs(diff), spd * 2);
+      }
+    }
+  }
+  p.x = Math.max(R, Math.min(GRID_W - R, nx));
+  p.y = Math.max(R, Math.min(GRID_H - R, ny));
+}
+
+function checkPowerups(gs, p) {
+  const pIdx = gs.powerups.findIndex(pu =>
+    Math.abs(p.x - (pu.x + 0.5)) < 0.55 && Math.abs(p.y - (pu.y + 0.5)) < 0.55
+  );
+  if (pIdx === -1) return null;
+  const pu = gs.powerups[pIdx];
+  let wallbreakUser = null;
+  if (pu.type === 'range') p.range = Math.min(p.range + 1, 8);
+  if (pu.type === 'bombs') p.maxBombs = Math.min(p.maxBombs + 1, 5);
+  if (pu.type === 'speed') p.speed = Math.min(p.speed + 0.5, 3);
+  if (pu.type === 'wallbreak') { p.hasWallbreak = true; wallbreakUser = { name: p.name, cleared: 0 }; }
+  gs.powerups.splice(pIdx, 1);
+  return { wallbreakUser, collected: { x: pu.x + 0.5, y: pu.y + 0.5, type: pu.type } };
+}
+
+function dirToDxDy(dir) {
+  return dir==='right'?{dx:1,dy:0}:dir==='left'?{dx:-1,dy:0}:dir==='down'?{dx:0,dy:1}:{dx:0,dy:-1};
+}
 const POWERUPS = ['range', 'bombs', 'speed', 'wallbreak'];
 
 function buildMap() {
@@ -174,8 +246,8 @@ function initGameState(room) {
     const pos = SPAWN_POSITIONS[p.slot];
     playerStates[p.id] = {
       id: p.id, name: p.name, slot: p.slot, isBot: p.isBot,
-      x: pos.x, y: pos.y,
-      alive: true, speed: 1, maxBombs: 1, range: 1, kills: 0, selfKill: false, hasWallbreak: false,
+      x: pos.x + 0.5, y: pos.y + 0.5, dx: 0, dy: 0,
+      alive: true, speed: 1, maxBombs: 1, range: 1, kills: 0, selfKill: false, hasWallbreak: false, fleeUntil: 0,
       activeBombs: 0,
     };
   });
@@ -199,9 +271,9 @@ function placeBomb(gs, playerId) {
   const p = gs.players[playerId];
   if (!p || !p.alive) return null;
   if (p.activeBombs >= p.maxBombs) return null;
-  // check no bomb already there
-  if (gs.bombs.find((b) => b.x === p.x && b.y === p.y)) return null;
-  const bomb = { id: ++bombIdCounter, x: p.x, y: p.y, ownerId: playerId, timer: 3000, range: p.range };
+  const { x: bx, y: by } = playerCell(p);
+  if (gs.bombs.find((b) => b.x === bx && b.y === by)) return null;
+  const bomb = { id: ++bombIdCounter, x: bx, y: by, ownerId: playerId, timer: 3000, range: p.range, passFor: playerId };
   gs.bombs.push(bomb);
   p.activeBombs++;
   return bomb;
@@ -241,7 +313,7 @@ function explodeBomb(gs, bomb, io, roomCode) {
   // damage players
   cells.forEach(({ x, y }) => {
     Object.values(gs.players).forEach((p) => {
-      if (p.alive && p.x === x && p.y === y) {
+      if (p.alive && Math.floor(p.x) === x && Math.floor(p.y) === y) {
         p.alive = false;
         if (owner && owner.id === p.id) p.selfKill = true;
         else if (owner) owner.kills++;
@@ -255,40 +327,13 @@ function explodeBomb(gs, bomb, io, roomCode) {
   io.to(roomCode).emit('mapUpdate', { map: gs.map, powerups: gs.powerups });
 }
 
-function movePlayer(gs, playerId, dir) {
-  const p = gs.players[playerId];
-  if (!p || !p.alive) return false;
-  const dx = dir === 'right' ? 1 : dir === 'left' ? -1 : 0;
-  const dy = dir === 'down' ? 1 : dir === 'up' ? -1 : 0;
-  const nx = p.x + dx, ny = p.y + dy;
-  if (nx < 0 || ny < 0 || nx >= GRID_W || ny >= GRID_H) return { moved: false, mapChanged: false };
-  if (gs.map[ny][nx] !== CELL.EMPTY) return { moved: false, mapChanged: false };
-  if (gs.bombs.find((b) => b.x === nx && b.y === ny)) return { moved: false, mapChanged: false };
-  p.x = nx; p.y = ny;
-  // collect powerup
-  let mapChanged = false;
-  let wallbreakUser = null;
-  const pIdx = gs.powerups.findIndex((pu) => pu.x === nx && pu.y === ny);
-  if (pIdx !== -1) {
-    const pu = gs.powerups[pIdx];
-    if (pu.type === 'range') p.range = Math.min(p.range + 1, 8);
-    if (pu.type === 'bombs') p.maxBombs = Math.min(p.maxBombs + 1, 5);
-    if (pu.type === 'speed') p.speed = Math.min(p.speed + 0.5, 3);
-    if (pu.type === 'wallbreak') {
-      p.hasWallbreak = true;
-      wallbreakUser = { name: p.name, cleared: 0 };
-    }
-    gs.powerups.splice(pIdx, 1);
-  }
-  return { moved: true, mapChanged, wallbreakUser };
-}
 
 function alivePlayers(gs) {
   return Object.values(gs.players).filter((p) => p.alive);
 }
 
 // ── Bot AI ─────────────────────────────────────────────────────────────────
-const BOT_TICK_MS = 500;
+const BOT_TICK_MS = 200;
 const botTimers = new Map(); // roomCode -> intervalId
 
 /** Check if cell (cx,cy) is in any active bomb's blast path */
@@ -324,7 +369,6 @@ function bfsEscape(gs, sx, sy) {
       if (visited.has(key)) continue;
       if (nx<0||ny<0||nx>=GRID_W||ny>=GRID_H) continue;
       if (gs.map[ny][nx] !== CELL.EMPTY) continue;
-      if (gs.bombs.find(b=>b.x===nx&&b.y===ny)) continue;
       visited.add(key);
       queue.push([nx, ny, firstDir ?? d]);
     }
@@ -346,7 +390,6 @@ function bfsChase(gs, sx, sy, tx, ty) {
       if (visited.has(key)) continue;
       if (nx<0||ny<0||nx>=GRID_W||ny>=GRID_H) continue;
       if (gs.map[ny][nx] !== CELL.EMPTY) continue;
-      if (gs.bombs.find(b=>b.x===nx&&b.y===ny)) continue;
       if (isInBlastZone(gs, nx, ny)) continue;
       visited.add(key);
       queue.push([nx, ny, firstDir ?? d]);
@@ -370,72 +413,71 @@ function startBotAI(room, io) {
     const gs = r.gameState;
     Object.values(gs.players).forEach((p) => {
       if (!p.isBot || !p.alive) return;
+      const { x: px, y: py } = playerCell(p);
+      const now = Date.now();
+      const inDanger = isInBlastZone(gs, px, py) || now < p.fleeUntil;
 
-      const inDanger = isInBlastZone(gs, p.x, p.y);
-
-      // ── FLEE: escape blast zone using BFS ──
+      // ── FLEE ──
       if (inDanger) {
-        const escDir = bfsEscape(gs, p.x, p.y);
-        if (escDir) movePlayer(gs, p.id, escDir);
-        io.to(r.code).emit('playerMoved', { playerId: p.id, x: p.x, y: p.y });
-        return; // flee first, do nothing else
+        const escDir = bfsEscape(gs, px, py);
+        if (escDir) { const d = dirToDxDy(escDir); p.dx = d.dx; p.dy = d.dy; }
+        else {
+          // no BFS path — try any perpendicular direction
+          const perp = [['up',0,-1],['down',0,1],['left',-1,0],['right',1,0]]
+            .find(([,ddx,ddy]) => { const nx=px+ddx,ny=py+ddy; return nx>=0&&ny>=0&&nx<GRID_W&&ny<GRID_H&&gs.map[ny][nx]===CELL.EMPTY; });
+          if (perp) { const d = dirToDxDy(perp[0]); p.dx = d.dx; p.dy = d.dy; }
+          else { p.dx = 0; p.dy = 0; }
+        }
+        return;
       }
 
-      // ── PLACE BOMB: only if BFS confirms escape after bomb ──
-      if (p.activeBombs < p.maxBombs && Math.random() < 0.12) {
-        // check adjacent soft blocks or players nearby — worth bombing?
+      // ── PLACE BOMB ──
+      if (p.activeBombs < p.maxBombs && Math.random() < 0.06) {
         const nearTarget = (() => {
-          const DIRS4 = [[0,-1],[0,1],[-1,0],[1,0]];
-          for (const [dx,dy] of DIRS4) {
+          for (const [ddx,ddy] of [[0,-1],[0,1],[-1,0],[1,0]]) {
             for (let i=1; i<=p.range; i++) {
-              const nx=p.x+dx*i, ny=p.y+dy*i;
+              const nx=px+ddx*i, ny=py+ddy*i;
               if (nx<0||ny<0||nx>=GRID_W||ny>=GRID_H) break;
               if (gs.map[ny][nx]===CELL.HARD) break;
               if (gs.map[ny][nx]===CELL.SOFT) return true;
-              // player in range?
-              if (Object.values(gs.players).some(q=>q.alive&&!q.isBot&&q.x===nx&&q.y===ny)) return true;
+              if (Object.values(gs.players).some(q=>q.alive&&!q.isBot&&Math.floor(q.x)===nx&&Math.floor(q.y)===ny)) return true;
             }
           }
           return false;
         })();
-
-        if (nearTarget && canEscapeAfterBomb(gs, p.x, p.y, p.range)) {
+        if (nearTarget && canEscapeAfterBomb(gs, px, py, p.range)) {
           const bomb = placeBomb(gs, p.id);
           if (bomb) {
             io.to(r.code).emit('bombPlaced', { bomb, playerId: p.id });
-            // immediately start fleeing
-            const escDir = bfsEscape(gs, p.x, p.y);
-            if (escDir) movePlayer(gs, p.id, escDir);
-            io.to(r.code).emit('playerMoved', { playerId: p.id, x: p.x, y: p.y });
+            p.fleeUntil = Date.now() + 2800; // flee until just before bomb explodes
+            const escDir = bfsEscape(gs, px, py);
+            if (escDir) { const d = dirToDxDy(escDir); p.dx = d.dx; p.dy = d.dy; }
             return;
           }
         }
       }
 
-      // ── CHASE nearest human player ──
+      // ── CHASE nearest human ──
       const humans = Object.values(gs.players).filter(q => q.alive && !q.isBot);
       let chased = false;
       if (humans.length) {
-        // pick closest
         const target = humans.reduce((a, b) =>
-          Math.abs(a.x-p.x)+Math.abs(a.y-p.y) < Math.abs(b.x-p.x)+Math.abs(b.y-p.y) ? a : b
-        );
-        const chaseDir = bfsChase(gs, p.x, p.y, target.x, target.y);
-        if (chaseDir) { movePlayer(gs, p.id, chaseDir); chased = true; }
+          Math.hypot(a.x-p.x, a.y-p.y) < Math.hypot(b.x-p.x, b.y-p.y) ? a : b);
+        const chaseDir = bfsChase(gs, px, py, Math.floor(target.x), Math.floor(target.y));
+        if (chaseDir) { const d = dirToDxDy(chaseDir); p.dx = d.dx; p.dy = d.dy; chased = true; }
       }
 
-      // ── WANDER if can't chase ──
+      // ── WANDER ──
       if (!chased) {
         const DIRS4 = [['up',0,-1],['down',0,1],['left',-1,0],['right',1,0]];
-        const safe = DIRS4.filter(([,dx,dy]) => {
-          const nx=p.x+dx, ny=p.y+dy;
+        const safe = DIRS4.filter(([,ddx,ddy]) => {
+          const nx=px+ddx, ny=py+ddy;
           return nx>=0&&ny>=0&&nx<GRID_W&&ny<GRID_H && gs.map[ny][nx]===CELL.EMPTY &&
             !gs.bombs.find(b=>b.x===nx&&b.y===ny) && !isInBlastZone(gs,nx,ny);
         });
-        if (safe.length) movePlayer(gs, p.id, safe[Math.floor(Math.random()*safe.length)][0]);
+        if (safe.length) { const d = dirToDxDy(safe[Math.floor(Math.random()*safe.length)][0]); p.dx = d.dx; p.dy = d.dy; }
+        else { p.dx = 0; p.dy = 0; }
       }
-
-      io.to(r.code).emit('playerMoved', { playerId: p.id, x: p.x, y: p.y });
     });
   }, BOT_TICK_MS);
   botTimers.set(room.code, timer);
@@ -446,34 +488,49 @@ const gameLoops = new Map(); // roomCode -> intervalId
 
 function startGameLoop(room, io) {
   let last = Date.now();
+  let posAcc = 0;
   const timer = setInterval(() => {
     const r = rooms.get(room.code);
     if (!r || r.phase !== 'playing') { clearInterval(timer); gameLoops.delete(r?.code); return; }
     const gs = r.gameState;
     const now = Date.now();
-    const dt = now - last;
+    const dt = Math.min(now - last, 50);
     last = now;
     gs.tick++;
 
-    // tick bombs
+    // ── physics ──
+    Object.values(gs.players).forEach(p => {
+      if (!p.alive) return;
+      // clear bomb pass-through once player exits that cell
+      gs.bombs.forEach(b => {
+        if (b.passFor === p.id && (Math.floor(p.x) !== b.x || Math.floor(p.y) !== b.y))
+          delete b.passFor;
+      });
+      physicsMove(gs, p, dt, p.id);
+      const result = checkPowerups(gs, p);
+      if (result) {
+        io.to(r.code).emit('powerupsUpdate', { powerups: gs.powerups });
+        io.to(r.code).emit('powerupCollected', { ...result.collected, playerId: p.id });
+        if (result.wallbreakUser) io.to(r.code).emit('wallbreakUsed', { ...result.wallbreakUser, playerId: p.id });
+      }
+    });
+
+    // ── bombs ──
     const toExplode = [];
     gs.bombs.forEach((b) => { b.timer -= dt; if (b.timer <= 0) toExplode.push(b); });
     toExplode.forEach((b) => explodeBomb(gs, b, io, r.code));
 
-    // tick explosions
+    // ── explosions ──
     gs.explosions.forEach((e) => { e.timer -= dt; });
     gs.explosions = gs.explosions.filter((e) => e.timer > 0);
 
-    // sudden death
+    // ── sudden death ──
     if (now > gs.suddenDeathAt) {
       const wave = Math.floor((now - gs.suddenDeathAt) / 2000);
-      if (wave > gs.suddenDeathWave) {
-        gs.suddenDeathWave = wave;
-        applySuddenDeath(gs, wave, io, r.code);
-      }
+      if (wave > gs.suddenDeathWave) { gs.suddenDeathWave = wave; applySuddenDeath(gs, wave, io, r.code); }
     }
 
-    // check win
+    // ── win check ──
     const alive = alivePlayers(gs);
     if (alive.length <= 1) {
       r.phase = 'ended';
@@ -485,12 +542,20 @@ function startGameLoop(room, io) {
       clearInterval(timer); gameLoops.delete(r.code);
       const bt = botTimers.get(r.code);
       if (bt) { clearInterval(bt); botTimers.delete(r.code); }
-      // save score if winner is a real player
       if (winner && !winner.isBot) saveWin(winner.id, winner.name, r.code);
     }
 
-    io.to(r.code).emit('gameState', { players: gs.players, bombs: gs.bombs });
-  }, 100);
+    // ── broadcast positions at ~30Hz ──
+    posAcc += dt;
+    if (posAcc >= 16) {
+      posAcc = 0;
+      const pos = {};
+      Object.values(gs.players).forEach(p => {
+        pos[p.id] = { x: p.x, y: p.y, range: p.range, maxBombs: p.maxBombs, speed: p.speed, hasWallbreak: p.hasWallbreak, alive: p.alive };
+      });
+      io.to(r.code).emit('posUpdate', { players: pos, bombs: gs.bombs });
+    }
+  }, 16);
   gameLoops.set(room.code, timer);
 }
 
@@ -505,7 +570,7 @@ function applySuddenDeath(gs, wave, io, roomCode) {
           cells.push({ x, y });
           // kill players on these cells
           Object.values(gs.players).forEach((p) => {
-            if (p.alive && p.x === x && p.y === y) {
+            if (p.alive && Math.floor(p.x) === x && Math.floor(p.y) === y) {
               p.alive = false;
               io.to(roomCode).emit('playerDied', { playerId: p.id });
             }
@@ -668,21 +733,14 @@ function setupSocket(io) {
       }, 1000);
     });
 
-    // PLAYER MOVE
-    socket.on('move', ({ code, dir }) => {
+    // SET DIRECTION (free movement)
+    socket.on('setDir', ({ code, dx, dy }) => {
       const room = rooms.get(code);
       if (!room || room.phase !== 'playing') return;
-      const { moved, mapChanged, wallbreakUser } = movePlayer(room.gameState, socket.id, dir);
-      if (moved) {
-        const p = room.gameState.players[socket.id];
-        io.to(room.code).emit('playerMoved', { playerId: socket.id, x: p.x, y: p.y });
-        if (mapChanged) {
-          io.to(room.code).emit('mapUpdate', { map: room.gameState.map, powerups: room.gameState.powerups });
-        } else {
-          io.to(room.code).emit('powerupsUpdate', { powerups: room.gameState.powerups });
-        }
-        if (wallbreakUser) io.to(room.code).emit('wallbreakUsed', { ...wallbreakUser, playerId: socket.id });
-      }
+      const p = room.gameState.players[socket.id];
+      if (!p?.alive) return;
+      p.dx = Math.sign(dx || 0);
+      p.dy = Math.sign(dy || 0);
     });
 
     // PLACE BOMB
