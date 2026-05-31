@@ -579,7 +579,7 @@ function startGameLoop(room, io) {
       posAcc = 0;
       const pos = {};
       Object.values(gs.players).forEach(p => {
-        pos[p.id] = { x: p.x, y: p.y, range: p.range, maxBombs: p.maxBombs, speed: p.speed, hasWallbreak: p.hasWallbreak, alive: p.alive };
+        pos[p.id] = { x: p.x, y: p.y, dx: p.dx, dy: p.dy, range: p.range, maxBombs: p.maxBombs, speed: p.speed, hasWallbreak: p.hasWallbreak, alive: p.alive };
       });
       io.to(r.code).emit('posUpdate', { players: pos, bombs: gs.bombs });
     }

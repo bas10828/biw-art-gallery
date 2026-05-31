@@ -138,7 +138,13 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
         const e = t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
         const curX = prev ? prev.srcX + (prev.dstX - prev.srcX) * e : p.x;
         const curY = prev ? prev.srcY + (prev.dstY - prev.srcY) * e : p.y;
-        tweens.current.set(pid, { srcX: curX, srcY: curY, dstX: pos.x, dstY: pos.y, startMs: Date.now(), dur: 30 });
+        // dead reckoning: predict 80ms ahead using server velocity
+        const BASE_SPEED = 3.8;
+        const spd = pos.speed || 1;
+        const pred = 0.08; // seconds
+        const predX = pos.x + (pos.dx || 0) * BASE_SPEED * spd * pred;
+        const predY = pos.y + (pos.dy || 0) * BASE_SPEED * spd * pred;
+        tweens.current.set(pid, { srcX: curX, srcY: curY, dstX: predX, dstY: predY, startMs: Date.now(), dur: 80 });
         Object.assign(p, pos);
         // reconcile local prediction
         if (pid === myId) {
