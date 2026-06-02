@@ -6,11 +6,34 @@ import ArtModal from "@/components/ArtModal";
 import Footer from "@/components/Footer";
 import { ARTWORKS, type Artwork } from "@/lib/artworks";
 
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "ArtGallery",
+  name: "Biw Art Gallery",
+  description:
+    "แกลเลอรีงานศิลปะดิจิทัลโดย บิว โคตรเสียว — Acrylic on Canvas ผลงานที่แฝงความรู้สึกลึกๆ ไว้ในสีสัน แสง และโลกแฟนตาซี",
+  url: "https://biwkhodseaw.22422522.xyz",
+  creator: {
+    "@type": "Person",
+    name: "บิว โคตรเสียว",
+    alternateName: ["khodseaw", "Biw"],
+    description: "ศิลปินนักวาดภาพ Acrylic on Canvas",
+    sameAs: [
+      "https://www.instagram.com/khotseaw._",
+      "https://www.facebook.com/khotseaw05",
+    ],
+  },
+};
+
 export default function GalleryPage() {
   const [selected, setSelected] = useState<Artwork | null>(null);
 
   return (
     <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       <Navbar />
 
       {/* Hero */}
