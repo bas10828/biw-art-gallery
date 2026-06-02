@@ -38,13 +38,10 @@ export default function GalleryPage() {
 
       {/* Hero */}
       <section className="relative flex flex-col items-center justify-center text-center pt-40 pb-20 px-6 overflow-hidden">
-        {/* Background image */}
-        <Image
-          src="/images/exhibition-trees.png"
-          alt=""
-          fill
-          className="object-cover object-center"
-          priority
+        {/* Background image — CSS bg for guaranteed early LCP preload */}
+        <div
+          className="absolute inset-0 bg-cover bg-center"
+          style={{ backgroundImage: "url('/images/exhibition-trees.webp')" }}
         />
         {/* Dark overlay */}
         <div

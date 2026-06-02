@@ -4,6 +4,7 @@ const http = require('http');
 const path = require('path');
 const fs = require('fs');
 const { Server: IOServer } = require('socket.io');
+const sharp = require('./node_modules/sharp');
 
 // ── Static file serving ────────────────────────────────────────────────────
 const MIME = {
@@ -873,16 +874,31 @@ nextApp.prepare().then(() => {
         const fp = path.join(__dirname, '.next', 'static', rel);
         return serveFile(fp, res);
       }
-      // serve /_next/image — NextServer doesn't handle image optimization in customServer mode
+      // serve /_next/image — optimize via sharp (NextServer standalone customServer doesn't run the optimizer)
       if (url.startsWith('/_next/image')) {
         try {
           const qs = url.split('?')[1] || '';
-          const imgUrl = decodeURIComponent(new URLSearchParams(qs).get('url') || '');
+          const params = new URLSearchParams(qs);
+          const imgUrl = decodeURIComponent(params.get('url') || '');
+          const w = parseInt(params.get('w') || '0', 10);
+          const q = parseInt(params.get('q') || '75', 10);
           if (imgUrl.startsWith('/')) {
             const fp = path.join(__dirname, 'public', imgUrl.split('?')[0]);
-            if (fs.existsSync(fp) && fs.statSync(fp).isFile()) return serveFile(fp, res);
+            if (fs.existsSync(fp) && fs.statSync(fp).isFile()) {
+              const accepts = String(req.headers['accept'] || '');
+              const useWebp = accepts.includes('image/webp');
+              const input = fs.readFileSync(fp);
+              let pipeline = sharp(input).rotate();
+              if (w > 0) pipeline = pipeline.resize(w, null, { withoutEnlargement: true });
+              pipeline = useWebp ? pipeline.webp({ quality: q }) : pipeline.jpeg({ quality: q, mozjpeg: true });
+              const out = await pipeline.toBuffer();
+              res.statusCode = 200;
+              res.setHeader('Content-Type', useWebp ? 'image/webp' : 'image/jpeg');
+              res.setHeader('Cache-Control', 'public,max-age=31536000,immutable');
+              return res.end(out);
+            }
           }
-        } catch {}
+        } catch (e) { /* fall through to NextServer */ }
         res.statusCode = 404; res.end('Not found'); return;
       }
       // serve public/ files

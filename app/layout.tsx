@@ -1,6 +1,23 @@
 import type { Metadata } from "next";
+import { Playfair_Display, Inter } from "next/font/google";
+import { preload } from "react-dom";
 import "./globals.css";
 import MerchPopup from "@/components/MerchPopup";
+
+const playfair = Playfair_Display({
+  subsets: ["latin"],
+  weight: ["400", "600", "700"],
+  style: ["normal", "italic"],
+  variable: "--font-playfair",
+  display: "swap",
+});
+
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600"],
+  variable: "--font-inter",
+  display: "swap",
+});
 
 const BASE_URL = "https://biwkhodseaw.22422522.xyz";
 
@@ -35,8 +52,8 @@ export const metadata: Metadata = {
     images: [
       {
         url: "/images/exhibition-trees.png",
-        width: 1200,
-        height: 630,
+        width: 1536,
+        height: 1024,
         alt: "Biw Art Gallery — khodseaw",
       },
     ],
@@ -58,8 +75,9 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  preload("/images/exhibition-trees.webp", { as: "image", fetchPriority: "high" });
   return (
-    <html lang="th">
+    <html lang="th" className={`${playfair.variable} ${inter.variable}`}>
       <body>
         {children}
         <MerchPopup />
