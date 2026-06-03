@@ -1,9 +1,15 @@
 "use client";
 import Link from "next/link";
 import Image from "next/image";
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { alternatePath, localizePath } from "@/lib/i18n";
+import { useT } from "@/lib/useLocale";
 
 export default function Navbar() {
+  const { locale, t } = useT();
+  const pathname = usePathname() || "/";
+  const otherLocale = locale === "th" ? "en" : "th";
   const [user, setUser] = useState<string | null>(null);
 
   useEffect(() => {
@@ -28,7 +34,7 @@ export default function Navbar() {
       }}
     >
       {/* Logo */}
-      <Link href="/" className="flex items-center flex-shrink-0">
+      <Link href={localizePath("/", locale)} className="flex items-center flex-shrink-0">
         <Image
           src="/images/logo-khodseaw.png"
           alt="Biw Art Gallery"
@@ -50,7 +56,7 @@ export default function Navbar() {
             {/* Logout — icon on mobile, text on desktop */}
             <button
               onClick={logout}
-              title="ออกจากระบบ"
+              title={t.nav.logout}
               className="flex items-center justify-center rounded-full transition-colors text-ink2 hover:text-ink"
               style={{
                 border: "1px solid rgba(212,168,67,.2)",
@@ -64,9 +70,24 @@ export default function Navbar() {
           </>
         )}
 
+        {/* Language toggle */}
+        <Link
+          href={alternatePath(pathname, otherLocale)}
+          title={otherLocale === "en" ? "English" : "ภาษาไทย"}
+          className="flex items-center justify-center rounded-full transition-colors text-ink2 hover:text-gold text-xs font-semibold"
+          style={{
+            border: "1px solid rgba(212,168,67,.2)",
+            minWidth: 36,
+            height: 32,
+            padding: "0 10px",
+          }}
+        >
+          {t.nav.switchTo}
+        </Link>
+
         {/* Mini Games — icon only on mobile, full on desktop */}
         <Link
-          href="/game"
+          href={localizePath("/game", locale)}
           className="flex items-center gap-1.5 rounded-full font-bold transition-all hover:-translate-y-0.5"
           style={{
             background: "linear-gradient(135deg,#d4a843 0%,#b88a28 100%)",
@@ -81,7 +102,7 @@ export default function Navbar() {
           }
         >
           <span className="text-base leading-none">🎮</span>
-          <span className="hidden sm:inline text-sm">Mini Games</span>
+          <span className="hidden sm:inline text-sm">{t.nav.miniGames}</span>
         </Link>
       </div>
     </nav>

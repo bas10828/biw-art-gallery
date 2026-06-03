@@ -3,6 +3,7 @@ import { Playfair_Display, Inter } from "next/font/google";
 import { preload } from "react-dom";
 import "./globals.css";
 import MerchPopup from "@/components/MerchPopup";
+import LocaleHtml from "@/components/LocaleHtml";
 
 const playfair = Playfair_Display({
   subsets: ["latin"],
@@ -71,6 +72,11 @@ export const metadata: Metadata = {
   },
   alternates: {
     canonical: "/",
+    languages: {
+      en: "/en",
+      th: "/",
+      "x-default": "/",
+    },
   },
 };
 
@@ -79,6 +85,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="th" className={`${playfair.variable} ${inter.variable}`}>
       <body>
+        <LocaleHtml />
         {children}
         <MerchPopup />
       </body>

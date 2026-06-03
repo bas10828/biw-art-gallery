@@ -2,6 +2,7 @@
 import { useEffect } from "react";
 import Image from "next/image";
 import type { Artwork } from "@/lib/artworks";
+import { useT } from "@/lib/useLocale";
 
 export default function ArtModal({
   art,
@@ -10,6 +11,10 @@ export default function ArtModal({
   art: Artwork;
   onClose: () => void;
 }) {
+  const { locale, t } = useT();
+  const title = locale === "en" ? art.titleEn : art.title;
+  const subtitle = locale === "en" ? art.title : art.titleEn;
+  const story = locale === "en" ? art.storyEn : art.story;
   useEffect(() => {
     document.body.style.overflow = "hidden";
     const handler = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -38,7 +43,7 @@ export default function ArtModal({
         <div className="relative w-full bg-black rounded-t-2xl" style={{ minHeight: "55vh" }}>
           <Image
             src={`/images/${art.file}`}
-            alt={art.title}
+            alt={title}
             fill
             className="object-contain rounded-t-2xl"
             sizes="(max-width:768px) 100vw, 896px"
@@ -48,21 +53,21 @@ export default function ArtModal({
 
         {/* info */}
         <div className="flex flex-col px-8 py-6">
-          <p className="text-gold text-xs tracking-[.2em] uppercase mb-3">✦ Original Artwork</p>
+          <p className="text-gold text-xs tracking-[.2em] uppercase mb-3">{t.modal.eyebrow}</p>
           <h2
             className="text-2xl font-bold leading-tight mb-1 text-ink"
             style={{ fontFamily: "var(--font-serif)" }}
           >
-            {art.title}
+            {title}
           </h2>
-          <p className="text-ink2 text-sm italic mb-1">{art.titleEn}</p>
+          <p className="text-ink2 text-sm italic mb-1">{subtitle}</p>
           <p
             className="text-xs text-ink3 py-3 border-y mb-4"
             style={{ borderColor: "rgba(212,168,67,.12)" }}
           >
             {art.medium} · {art.year}
           </p>
-          <p className="text-ink2 text-sm leading-relaxed italic">{art.story}</p>
+          <p className="text-ink2 text-sm leading-relaxed italic">{story}</p>
         </div>
 
         {/* close */}
