@@ -195,6 +195,20 @@ function physicsMove(gs, p, dt, playerId) {
   }
   p.x = Math.max(R, Math.min(GRID_W - R, nx));
   p.y = Math.max(R, Math.min(GRID_H - R, ny));
+
+  // Safety net: corner-correction can occasionally shove the body into a solid
+  // cell (notably the border), leaving a unit stuck inside a wall. Push it back
+  // out so players/bots can never end up — or place bombs — inside a wall.
+  for (let iter = 0; iter < 2; iter++) {
+    let fixed = false;
+    const cxL = Math.floor(p.x - R + 0.001), cxR = Math.floor(p.x + R - 0.001), row = Math.floor(p.y);
+    if (isSolid(gs, cxL, row, playerId)) { p.x = cxL + 1 + R + 0.001; fixed = true; }
+    else if (isSolid(gs, cxR, row, playerId)) { p.x = cxR - R - 0.001; fixed = true; }
+    const cyT = Math.floor(p.y - R + 0.001), cyB = Math.floor(p.y + R - 0.001), col = Math.floor(p.x);
+    if (isSolid(gs, col, cyT, playerId)) { p.y = cyT + 1 + R + 0.001; fixed = true; }
+    else if (isSolid(gs, col, cyB, playerId)) { p.y = cyB - R - 0.001; fixed = true; }
+    if (!fixed) break;
+  }
 }
 
 function checkPowerups(gs, p) {
@@ -334,7 +348,7 @@ function alivePlayers(gs) {
 }
 
 // ── Bot AI ─────────────────────────────────────────────────────────────────
-const BOT_TICK_MS = 200;
+const BOT_TICK_MS = 100;
 const botTimers = new Map(); // roomCode -> intervalId
 
 /** Check if cell (cx,cy) is in any active bomb's blast path */
@@ -357,7 +371,7 @@ function isInBlastZone(gs, cx, cy) {
 }
 
 // BFS: find first step toward nearest safe cell; returns dir string or null
-function bfsEscape(gs, sx, sy) {
+function bfsEscape(gs, sx, sy, botId) {
   const queue = [[sx, sy, null]]; // [x, y, firstDir]
   const visited = new Set([`${sx},${sy}`]);
   const DIRS4 = [['up',0,-1],['down',0,1],['left',-1,0],['right',1,0]];
@@ -370,6 +384,7 @@ function bfsEscape(gs, sx, sy) {
       if (visited.has(key)) continue;
       if (nx<0||ny<0||nx>=GRID_W||ny>=GRID_H) continue;
       if (gs.map[ny][nx] !== CELL.EMPTY) continue;
+      if (gs.bombs.some(b => b.x === nx && b.y === ny)) continue; // bombs are solid to everyone
       visited.add(key);
       queue.push([nx, ny, firstDir ?? d]);
     }
@@ -378,7 +393,7 @@ function bfsEscape(gs, sx, sy) {
 }
 
 // BFS: find first step toward target (tx,ty), avoiding blast zones
-function bfsChase(gs, sx, sy, tx, ty) {
+function bfsChase(gs, sx, sy, tx, ty, botId) {
   const queue = [[sx, sy, null]];
   const visited = new Set([`${sx},${sy}`]);
   const DIRS4 = [['up',0,-1],['down',0,1],['left',-1,0],['right',1,0]];
@@ -391,6 +406,7 @@ function bfsChase(gs, sx, sy, tx, ty) {
       if (visited.has(key)) continue;
       if (nx<0||ny<0||nx>=GRID_W||ny>=GRID_H) continue;
       if (gs.map[ny][nx] !== CELL.EMPTY) continue;
+      if (gs.bombs.some(b => b.x === nx && b.y === ny)) continue; // bombs are solid
       if (isInBlastZone(gs, nx, ny)) continue;
       visited.add(key);
       queue.push([nx, ny, firstDir ?? d]);
@@ -400,7 +416,7 @@ function bfsChase(gs, sx, sy, tx, ty) {
 }
 
 // BFS treating soft walls as passable — returns first step toward target (for wall-busting)
-function bfsThruSoft(gs, sx, sy, tx, ty) {
+function bfsThruSoft(gs, sx, sy, tx, ty, botId) {
   const queue = [[sx, sy, null]];
   const visited = new Set([`${sx},${sy}`]);
   const DIRS4 = [['up',0,-1],['down',0,1],['left',-1,0],['right',1,0]];
@@ -413,6 +429,7 @@ function bfsThruSoft(gs, sx, sy, tx, ty) {
       if (visited.has(key)) continue;
       if (nx<0||ny<0||nx>=GRID_W||ny>=GRID_H) continue;
       if (gs.map[ny][nx] === CELL.HARD) continue;
+      if (gs.bombs.some(b => b.x === nx && b.y === ny)) continue; // bombs are solid
       if (isInBlastZone(gs, nx, ny)) continue;
       visited.add(key);
       queue.push([nx, ny, firstDir ?? d]);
@@ -422,10 +439,10 @@ function bfsThruSoft(gs, sx, sy, tx, ty) {
 }
 
 // Returns escape direction after placing hypothetical bomb, or null if trapped
-function canEscapeAfterBomb(gs, bx, by, range) {
-  const fakeBomb = { x: bx, y: by, range };
+function canEscapeAfterBomb(gs, bx, by, range, ownerId) {
+  const fakeBomb = { x: bx, y: by, range, ownerId };
   const fakeGs = { ...gs, bombs: [...gs.bombs, fakeBomb] };
-  return bfsEscape(fakeGs, bx, by); // direction string or null
+  return bfsEscape(fakeGs, bx, by, ownerId); // direction string or null
 }
 
 function startBotAI(room, io) {
@@ -442,22 +459,51 @@ function startBotAI(room, io) {
 
       // ── FLEE ──
       if (inDanger) {
-        const escDir = bfsEscape(gs, px, py);
-        if (escDir) { const d = dirToDxDy(escDir); p.dx = d.dx; p.dy = d.dy; }
-        else {
-          // no BFS path — try any perpendicular direction
-          const perp = [['up',0,-1],['down',0,1],['left',-1,0],['right',1,0]]
-            .find(([,ddx,ddy]) => { const nx=px+ddx,ny=py+ddy; return nx>=0&&ny>=0&&nx<GRID_W&&ny<GRID_H&&gs.map[ny][nx]===CELL.EMPTY; });
-          if (perp) { const d = dirToDxDy(perp[0]); p.dx = d.dx; p.dy = d.dy; }
-          else { p.dx = 0; p.dy = 0; }
+        // Already standing on a safe cell? Hold still and wait the bomb out.
+        // While fleeUntil is active the bot stays in this branch; if it keeps
+        // wandering it drifts back into a blast — the main cause of bots dying
+        // next to their own bombs. Only move while the current cell is unsafe.
+        if (!isInBlastZone(gs, px, py)) {
+          p.dx = 0; p.dy = 0;
+          return;
         }
+        const escDir = bfsEscape(gs, px, py, p.id);
+        // Pick the next cell on the escape path and steer toward ITS CENTER, rather
+        // than holding a raw axis direction. Center-seeking makes the bot actually
+        // arrive at each cell (no drift/overshoot/wall-pinning), so the next tick
+        // re-plans from a clean cell and progress stays deterministic. This is the
+        // fix for bots dying one cell from their own bomb.
+        let next = null;
+        if (escDir) {
+          const d = dirToDxDy(escDir);
+          next = { x: px + d.dx, y: py + d.dy };
+        } else {
+          // trapped: prefer an EMPTY, bomb-free neighbour OUTSIDE the blast,
+          // then any such neighbour, else hold position
+          const opts = [['up',0,-1],['down',0,1],['left',-1,0],['right',1,0]]
+            .filter(([,ddx,ddy]) => {
+              const nx=px+ddx, ny=py+ddy;
+              return nx>=0&&ny>=0&&nx<GRID_W&&ny<GRID_H && gs.map[ny][nx]===CELL.EMPTY
+                && !gs.bombs.some(b=>b.x===nx&&b.y===ny);
+            });
+          const pick = opts.find(([,ddx,ddy]) => !isInBlastZone(gs, px+ddx, py+ddy)) || opts[0];
+          if (pick) { const d = dirToDxDy(pick[0]); next = { x: px + d.dx, y: py + d.dy }; }
+        }
+        if (next) {
+          const tcx = next.x + 0.5, tcy = next.y + 0.5;
+          p.dx = Math.abs(tcx - p.x) > 0.08 ? Math.sign(tcx - p.x) : 0;
+          p.dy = Math.abs(tcy - p.y) > 0.08 ? Math.sign(tcy - p.y) : 0;
+        } else { p.dx = 0; p.dy = 0; }
         return;
       }
 
       // ── PLACE BOMB ──
       // only bomb when near cell center — ensures physics can follow the BFS escape path
       const offCenter = Math.abs(p.x - (px + 0.5)) > 0.28 || Math.abs(p.y - (py + 0.5)) > 0.28;
-      if (!offCenter && p.activeBombs < p.maxBombs && Math.random() < 0.3) {
+      // Anti-sandwich: never drop a bomb when another bomb is already close enough
+      // that the two blasts could overlap the escape corridor.
+      const bombNearby = gs.bombs.some(b => Math.abs(b.x - px) + Math.abs(b.y - py) <= p.range + 2);
+      if (!offCenter && !bombNearby && p.activeBombs < p.maxBombs && Math.random() < 0.3) {
         const humans = Object.values(gs.players).filter(q => q.alive && !q.isBot);
         const nearTarget = (() => {
           for (const [ddx,ddy] of [[0,-1],[0,1],[-1,0],[1,0]]) {
@@ -471,7 +517,7 @@ function startBotAI(room, io) {
           }
           return false;
         })();
-        const escDir = canEscapeAfterBomb(gs, px, py, p.range);
+        const escDir = canEscapeAfterBomb(gs, px, py, p.range, p.id);
         if (nearTarget && escDir) {
           const bomb = placeBomb(gs, p.id);
           if (bomb) {
@@ -485,14 +531,14 @@ function startBotAI(room, io) {
       }
 
       // ── CHASE nearest human ──
-      const humans = Object.values(gs.players).filter(q => q.alive && !q.isBot);
+      const humans2 = Object.values(gs.players).filter(q => q.alive && !q.isBot);
       let chased = false;
-      if (humans.length) {
-        const target = humans.reduce((a, b) =>
+      if (humans2.length) {
+        const target = humans2.reduce((a, b) =>
           Math.hypot(a.x-p.x, a.y-p.y) < Math.hypot(b.x-p.x, b.y-p.y) ? a : b);
         const tx = Math.floor(target.x), ty = Math.floor(target.y);
-        const chaseDir = bfsChase(gs, px, py, tx, ty)
-          ?? bfsThruSoft(gs, px, py, tx, ty); // fallback: navigate through soft walls
+        const chaseDir = bfsChase(gs, px, py, tx, ty, p.id)
+          ?? bfsThruSoft(gs, px, py, tx, ty, p.id); // fallback: navigate through soft walls
         if (chaseDir) { const d = dirToDxDy(chaseDir); p.dx = d.dx; p.dy = d.dy; chased = true; }
       }
 
@@ -560,10 +606,20 @@ function startGameLoop(room, io) {
     }
 
     // ── win check ──
-    const alive = alivePlayers(gs);
-    if (alive.length <= 1) {
+    // When the game is decided, lock the winner but keep the loop running for a
+    // short delay so the final explosion + death effect are visible and players
+    // can see who was last standing. gameOver is emitted once, after the delay.
+    if (!r.endingAt) {
+      const alive = alivePlayers(gs);
+      if (alive.length <= 1) {
+        r.endingAt = now + 1500;
+        const w = alive[0] || null;
+        r.endWinner = w ? { id: w.id, name: w.name, isBot: w.isBot } : null;
+      }
+    }
+    if (r.endingAt && now >= r.endingAt) {
       r.phase = 'ended';
-      const winner = alive[0] || null;
+      const winner = r.endWinner;
       const stats = Object.values(gs.players).map((p) => ({
         id: p.id, name: p.name, slot: p.slot, isBot: p.isBot, alive: p.alive, kills: p.kills, selfKill: p.selfKill,
       }));
@@ -755,6 +811,7 @@ function setupSocket(io) {
         if (count > 0) { io.to(room.code).emit('countdown', { seconds: count }); return; }
         clearInterval(cd);
         room.phase = 'playing';
+        room.endingAt = null; room.endWinner = null;
         room.gameState = initGameState(room);
         io.to(room.code).emit('gameStarted', { gameState: room.gameState, roomInfo: roomInfo(room) });
         startGameLoop(room, io);

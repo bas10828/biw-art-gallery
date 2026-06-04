@@ -53,6 +53,8 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
   const keysRef = useRef<Set<string>>(new Set());
   const lastMoveRef = useRef<number>(0);
   const imgCache = useRef<Map<string, HTMLImageElement>>(new Map());
+  // dead players → charred-body render data (position captured at death)
+  const deathsRef = useRef<Map<string, { x: number; y: number; t: number }>>(new Map());
   const code = room.code;
 
   // ── Smooth movement: per-player tween data ──
@@ -225,7 +227,14 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
       stateRef.current.powerups = powerups;
     };
     const onPlayerDied = ({ playerId }: any) => {
-      if (stateRef.current.players[playerId]) stateRef.current.players[playerId].alive = false;
+      const dp = stateRef.current.players[playerId];
+      if (dp) {
+        dp.alive = false;
+        // capture death position for the charred-body effect
+        if (!deathsRef.current.has(playerId)) {
+          deathsRef.current.set(playerId, { x: dp.x, y: dp.y, t: Date.now() });
+        }
+      }
       if (playerId === myId) setDead(true);
     };
     const handleGameOver = ({ winner: w, stats }: any) => {
@@ -596,6 +605,43 @@ export default function BombermanGame({ initialState, room, myId, isSpectator, s
         });
       });
 
+
+      // dead players — charred black silhouette + rising smoke, so it is obvious
+      // who got bombed (corpse stays on the board until the round resets)
+      deathsRef.current.forEach((d) => {
+        const age = now - d.t;
+        const cx = d.x * CS, cy = d.y * CS;
+        // ground shadow
+        ctx.beginPath(); ctx.ellipse(cx, cy + CS * 0.4, CS * 0.22, CS * 0.06, 0, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(0,0,0,0.45)"; ctx.fill();
+        // charred body
+        const bW = CS * 0.36, bH = CS * 0.25, bY = cy + CS * 0.18;
+        ctx.beginPath(); ctx.roundRect(cx - bW / 2, bY - bH / 2, bW, bH, bH * 0.35);
+        ctx.fillStyle = "#181818"; ctx.fill();
+        // charred head
+        const hR = CS * 0.28, hY = cy - CS * 0.15;
+        ctx.beginPath(); ctx.arc(cx, hY, hR, 0, Math.PI * 2);
+        ctx.fillStyle = "#222"; ctx.fill();
+        // x_x eyes
+        ctx.strokeStyle = "rgba(190,190,190,0.85)";
+        ctx.lineWidth = Math.max(1, hR * 0.12); ctx.lineCap = "round";
+        [-1, 1].forEach((s) => {
+          const ex = cx + s * hR * 0.33, ey = hY + hR * 0.02, r = hR * 0.16;
+          ctx.beginPath();
+          ctx.moveTo(ex - r, ey - r); ctx.lineTo(ex + r, ey + r);
+          ctx.moveTo(ex + r, ey - r); ctx.lineTo(ex - r, ey + r); ctx.stroke();
+        });
+        // rising smoke for the first ~900ms after death
+        if (age < 900) {
+          for (let i = 0; i < 3; i++) {
+            const prog = ((age / 900) + i / 3) % 1;
+            const sx = cx + Math.sin(prog * 6 + i) * CS * 0.12;
+            const sy = cy - prog * CS * 0.9;
+            ctx.beginPath(); ctx.arc(sx, sy, CS * 0.08 * (1 - prog * 0.4), 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(85,85,85,${0.35 * (1 - prog)})`; ctx.fill();
+          }
+        }
+      });
 
       // players — chibi character (head + body), smooth interpolated position
       Object.values(gs.players).forEach((p) => {
