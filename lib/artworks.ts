@@ -7,6 +7,10 @@ export interface Artwork {
   medium: string;
   story: string;
   storyEn: string;
+  /** Optional physical dimensions, e.g. "130 × 200 cm". */
+  size?: string;
+  /** Highlight piece: shown in the featured section, excluded from the grid. */
+  featured?: boolean;
 }
 
 export const ARTWORKS: Artwork[] = [
@@ -177,5 +181,25 @@ export const ARTWORKS: Artwork[] = [
       "ตระกูลเดียวกัน โลกเดียวกัน แต่คนละความรู้สึก",
     storyEn:
       "Same kin, same world — a different feeling.",
+  },
+  {
+    id: 15,
+    file: "voices-of-the-wilderness.jpg",
+    title: "เสียงพูดคุยแห่งพงไพร",
+    titleEn: "Voices of the Wilderness",
+    year: "2026",
+    medium: "Oil on Canvas",
+    size: "130 × 200 cm",
+    featured: true,
+    story:
+      "ก่อนมนุษย์จะมีภาษา ก่อนตัวอักษร หนังสือ หรือบทสนทนาใดๆ โลกได้พูดคุยกับตัวเองมาแล้วนับล้านปี\n\n" +
+      "กิ่งก้านที่ทอดยื่นและพันเกี่ยวในผลงานชิ้นนี้ ไม่ใช่เพียงรูปทรงของต้นไม้ หากเป็นเส้นทางของการสื่อสารที่มองไม่เห็น เครือข่ายของการรับรู้ที่เชื่อมโยงทุกชีวิตเข้าไว้ด้วยกัน ในสายตาเรา ป่าอาจเงียบงัน แต่ในความเงียบนั้นกลับเต็มไปด้วยบทสนทนา — ต้นไม้บอกเล่าการเปลี่ยนแปลงของฤดูกาล ส่งสัญญาณถึงภัยคุกคาม แบ่งปันพลังงานและความทรงจำผ่านรากที่หยั่งลึกใต้ผืนดิน\n\n" +
+      "เส้นกิ่งสีขาวที่แตกแขนงไปทั่วผืนภาพ คือระบบประสาทขนาดมหึมาของโลก ราวกับป่าทั้งผืนมิได้ประกอบขึ้นจากต้นไม้หลายต้น หากเป็นสิ่งมีชีวิตเดียวที่กำลังคิด กำลังรู้สึก และสนทนากับตัวเองอยู่ตลอดเวลา โทนน้ำเงินเข้มไม่ได้สื่อถึงค่ำคืนเพียงอย่างเดียว แต่เป็นดินแดนระหว่างความจริงกับความฝัน\n\n" +
+      "ผลงานชิ้นนี้จึงตั้งคำถามว่า บางทีเราอาจไม่เคยอยู่เหนือธรรมชาติเลย เป็นเพียงอีกหนึ่งเสียงเล็กๆ ในบทสนทนาอันยิ่งใหญ่ของโลก และบางที “ความเงียบของป่า” อาจเป็นเพราะเราลืมวิธีรับฟังภาษาของมันไปแล้ว",
+    storyEn:
+      "Before humankind had language — before letters, books, or any conversation — the world had already been speaking to itself for millions of years.\n\n" +
+      "The branches reaching and intertwining in this work are not merely the shape of trees, but invisible paths of communication, a network of awareness binding every living thing together. To us the forest may seem silent, yet that silence is full of conversation — trees telling of the changing seasons, signaling danger, sharing energy and memory through roots sunk deep in the earth.\n\n" +
+      "The white branches spreading across the canvas are the immense nervous system of the world, as if the whole forest were not many trees but a single living being — thinking, feeling, and forever in dialogue with itself. The deep blue speaks not only of nightfall, but of the land between the real and the dreamed.\n\n" +
+      "And so the work asks: perhaps we were never above nature, only one small voice in its vast conversation. And perhaps the “silence of the forest” is only because we have forgotten how to listen to its language.",
   },
 ];

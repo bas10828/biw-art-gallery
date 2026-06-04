@@ -52,18 +52,18 @@ export const metadata: Metadata = {
       "แกลเลอรีงานศิลปะดิจิทัลโดย บิว โคตรเสียว — Acrylic on Canvas ผลงานที่แฝงความรู้สึกลึกๆ ไว้ในสีสัน แสง และโลกแฟนตาซี",
     images: [
       {
-        url: "/images/exhibition-trees.png",
-        width: 1536,
-        height: 1024,
-        alt: "Biw Art Gallery — khodseaw",
+        url: "/images/voices-of-the-wilderness.jpg",
+        width: 1553,
+        height: 1013,
+        alt: "เสียงพูดคุยแห่งพงไพร — Voices of the Wilderness โดย บิว โคตรเสียว",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
     title: "Biw Art Gallery | บิว โคตรเสียว",
-    description: "แกลเลอรีงานศิลปะดิจิทัลโดย บิว โคตรเสียว — Acrylic on Canvas",
-    images: ["/images/exhibition-trees.png"],
+    description: "แกลเลอรีงานศิลปะดิจิทัลโดย บิว โคตรเสียว — Oil on Canvas",
+    images: ["/images/voices-of-the-wilderness.jpg"],
   },
   robots: {
     index: true,

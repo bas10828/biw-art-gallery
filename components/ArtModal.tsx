@@ -65,9 +65,14 @@ export default function ArtModal({
             className="text-xs text-ink3 py-3 border-y mb-4"
             style={{ borderColor: "rgba(212,168,67,.12)" }}
           >
-            {art.medium} · {art.year}
+            {art.medium}
+            {art.size ? ` · ${art.size}` : ""} · {art.year}
           </p>
-          <p className="text-ink2 text-sm leading-relaxed italic">{story}</p>
+          <div className="flex flex-col gap-3 text-ink2 text-sm leading-relaxed italic">
+            {story.split("\n\n").map((p, i) => (
+              <p key={i}>{p}</p>
+            ))}
+          </div>
         </div>
 
         {/* close */}

@@ -13,6 +13,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: "weekly",
       priority: 1,
       alternates: homeAlternates,
+      images: [`${BASE_URL}/images/voices-of-the-wilderness.jpg`],
     },
     {
       url: `${BASE_URL}/en`,
@@ -20,6 +21,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: "weekly",
       priority: 0.9,
       alternates: homeAlternates,
+      images: [`${BASE_URL}/images/voices-of-the-wilderness.jpg`],
     },
     { url: `${BASE_URL}/game`, lastModified: new Date(), changeFrequency: "monthly", priority: 0.7 },
     { url: `${BASE_URL}/game/jigsaw`, lastModified: new Date(), changeFrequency: "monthly", priority: 0.6 },

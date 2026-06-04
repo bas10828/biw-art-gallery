@@ -12,6 +12,39 @@ export default function HomePage() {
   const { locale, t } = useT();
   const [selected, setSelected] = useState<Artwork | null>(null);
 
+  const featured = ARTWORKS.find((a) => a.featured);
+  const gridArtworks = ARTWORKS.filter((a) => !a.featured);
+
+  const artist = {
+    "@type": "Person",
+    name: locale === "en" ? "Aksonwichit Hongtan" : "อักษรวิจิตร หงษ์ตัน",
+    alternateName: ["บิว โคตรเสียว", "บิวโคตรเสียว", "khodseaw", "Biw"],
+    jobTitle: locale === "en" ? "Painter" : "จิตรกร",
+    nationality: "Thai",
+    description: t.about.short,
+    sameAs: [
+      "https://www.instagram.com/khotseaw._",
+      "https://www.facebook.com/khotseaw05",
+    ],
+  };
+
+  const featuredJsonLd = featured && {
+    "@context": "https://schema.org",
+    "@type": "VisualArtwork",
+    name: locale === "en" ? featured.titleEn : featured.title,
+    alternateName: locale === "en" ? featured.title : featured.titleEn,
+    image: `${SITE_URL}/images/${featured.file}`,
+    creator: artist,
+    artform: "Painting",
+    artMedium: featured.medium,
+    artworkSurface: "Canvas",
+    width: { "@type": "QuantitativeValue", value: 130, unitCode: "CMT" },
+    height: { "@type": "QuantitativeValue", value: 200, unitCode: "CMT" },
+    dateCreated: featured.year,
+    inLanguage: locale,
+    abstract: (locale === "en" ? featured.storyEn : featured.story).replace(/\n\n/g, " "),
+  };
+
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "ArtGallery",
@@ -19,18 +52,7 @@ export default function HomePage() {
     description: t.about.short,
     url: locale === "en" ? `${SITE_URL}/en` : SITE_URL,
     inLanguage: locale,
-    creator: {
-      "@type": "Person",
-      name: locale === "en" ? "Aksonwichit Hongtan" : "อักษรวิจิตร หงษ์ตัน",
-      alternateName: ["บิว โคตรเสียว", "บิวโคตรเสียว", "khodseaw", "Biw"],
-      jobTitle: locale === "en" ? "Painter" : "จิตรกร",
-      nationality: "Thai",
-      description: t.about.short,
-      sameAs: [
-        "https://www.instagram.com/khotseaw._",
-        "https://www.facebook.com/khotseaw05",
-      ],
-    },
+    creator: artist,
   };
 
   return (
@@ -39,6 +61,12 @@ export default function HomePage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
+      {featuredJsonLd && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(featuredJsonLd) }}
+        />
+      )}
       <Navbar />
 
       {/* Hero */}
@@ -85,10 +113,82 @@ export default function HomePage() {
         />
       </section>
 
+      {/* Featured / Highlight */}
+      {featured && (
+        <section className="max-w-7xl mx-auto px-6 pb-24">
+          <div
+            className="group grid grid-cols-1 md:grid-cols-2 rounded-2xl overflow-hidden border"
+            style={{ borderColor: "rgba(212,168,67,.18)", background: "var(--color-bg3)" }}
+          >
+            {/* Image */}
+            <button
+              onClick={() => setSelected(featured)}
+              className="relative block w-full aspect-[3/2] md:aspect-auto md:min-h-[26rem] overflow-hidden cursor-zoom-in"
+            >
+              <Image
+                src={`/images/${featured.file}`}
+                alt={locale === "en" ? featured.titleEn : featured.title}
+                fill
+                className="object-cover transition-transform duration-700 group-hover:scale-[1.03]"
+                sizes="(max-width:768px) 100vw, 50vw"
+                priority
+              />
+            </button>
+
+            {/* Text */}
+            <div className="flex flex-col justify-center gap-4 px-8 py-10 md:px-12">
+              <span
+                className="text-gold text-xs tracking-[.2em] uppercase border rounded-full px-4 py-1.5 self-start"
+                style={{ borderColor: "rgba(212,168,67,.25)" }}
+              >
+                {t.featured.eyebrow}
+              </span>
+              <h2
+                className="font-bold leading-tight"
+                style={{
+                  fontFamily: "var(--font-serif)",
+                  fontSize: "clamp(1.6rem,3.2vw,2.4rem)",
+                  background: "linear-gradient(135deg,#ffffff 30%,var(--color-gold-light) 100%)",
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent",
+                  backgroundClip: "text",
+                }}
+              >
+                {locale === "en" ? featured.titleEn : featured.title}
+              </h2>
+              <p className="text-ink2 text-sm italic -mt-1">
+                {locale === "en" ? featured.title : featured.titleEn}
+              </p>
+              <p
+                className="text-xs text-ink3 py-3 border-y"
+                style={{ borderColor: "rgba(212,168,67,.12)" }}
+              >
+                {featured.medium}
+                {featured.size ? ` · ${featured.size}` : ""} · {featured.year}
+              </p>
+              <div className="flex flex-col gap-3 text-ink2 text-sm leading-relaxed italic">
+                {(locale === "en" ? featured.storyEn : featured.story)
+                  .split("\n\n")
+                  .slice(0, 2)
+                  .map((p, i) => (
+                    <p key={i}>{p}</p>
+                  ))}
+              </div>
+              <button
+                onClick={() => setSelected(featured)}
+                className="self-start mt-2 text-gold text-sm tracking-wide hover:text-gold-light transition-colors"
+              >
+                {t.featured.cta} →
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* Gallery Grid */}
       <section className="max-w-7xl mx-auto px-6 pb-24">
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-6">
-          {ARTWORKS.map((art, i) => (
+          {gridArtworks.map((art, i) => (
             <div
               key={art.id}
               onClick={() => setSelected(art)}

@@ -53,6 +53,10 @@ type Dict = {
     bio2: string;
     bio3: string;
   };
+  featured: {
+    eyebrow: string;
+    cta: string;
+  };
   modal: {
     eyebrow: string;
   };
@@ -84,6 +88,10 @@ export const DICT: Record<Locale, Dict> = {
       bio2: "ผลงานมักอยู่ในโทนสีน้ำเงินและเฉดสีเย็น สร้างบรรยากาศสงบนิ่ง ลึกลับ และเปี่ยมความรู้สึกทางจิตวิญญาณ ต้นไม้เดียวดาย หิ่งห้อยส่องแสง และพื้นที่ว่างอันกว้างใหญ่ เชื้อเชิญให้ผู้ชมเผชิญหน้ากับความเงียบ ความโดดเดี่ยว และความจริงพื้นฐานของชีวิต — การเปลี่ยนแปลง การจากลา และการยืนหยัดเพียงลำพัง สร้างสรรค์ด้วยสีน้ำมันบนผ้าใบ บางครั้งใช้สีอะคริลิกร่วมด้วย เคลื่อนไหวระหว่าง Landscape, Fantasy และ Emotional Landscape",
       bio3: "สำหรับอักษรวิจิตร ต้นไม้ทุกต้นคือภาพเหมือนของมนุษย์ และป่าทุกผืนคือบทสนทนาระหว่างความโดดเดี่ยวกับการเชื่อมโยง ซึ่งยังคงดำเนินต่อไปอย่างไม่มีที่สิ้นสุด",
     },
+    featured: {
+      eyebrow: "ผลงานล่าสุด",
+      cta: "ดูผลงานเต็ม",
+    },
     modal: {
       eyebrow: "✦ Original Artwork",
     },
@@ -112,6 +120,10 @@ export const DICT: Record<Locale, Dict> = {
       bio1: "Aksonwichit Hongtan, known as “Biw Khodseaw,” is a contemporary Thai artist who explores the relationship between humanity and nature through trees, forests, and emotional landscapes poised between reality and imagination. At the heart of his work is the recurring leafless tree — not an object of nature, but an image of life itself: growth, loss, and existence amid uncertainty. Its deep roots are memory and identity; its branching limbs, the connection to a world larger than oneself.",
       bio2: "His paintings often dwell in blues and cool tones, creating an atmosphere that is calm, mysterious, and deeply spiritual. A solitary tree, glowing fireflies, and vast empty space invite the viewer to face silence, solitude, and the fundamental truths of life — change, parting, and standing alone. They are made in oil on canvas, at times with acrylic, moving between Landscape, Fantasy, and Emotional Landscape.",
       bio3: "For Aksonwichit, every tree is a portrait of a human being, and every forest a dialogue between solitude and connection — one that goes on without end.",
+    },
+    featured: {
+      eyebrow: "Latest Work",
+      cta: "View full piece",
     },
     modal: {
       eyebrow: "✦ Original Artwork",
