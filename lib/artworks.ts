@@ -202,4 +202,23 @@ export const ARTWORKS: Artwork[] = [
       "The white branches spreading across the canvas are the immense nervous system of the world, as if the whole forest were not many trees but a single living being — thinking, feeling, and forever in dialogue with itself. The deep blue speaks not only of nightfall, but of the land between the real and the dreamed.\n\n" +
       "And so the work asks: perhaps we were never above nature, only one small voice in its vast conversation. And perhaps the “silence of the forest” is only because we have forgotten how to listen to its language.",
   },
+  {
+    id: 16,
+    file: "myself-2.jpg",
+    title: "ตัวฉันเอง ชิ้นที่ 2",
+    titleEn: "Myself, Piece #2",
+    year: "2026",
+    medium: "Oil on Canvas",
+    size: "120 × 90 cm",
+    story:
+      "ฉันไม่ได้หายไป แค่กำลังกลายเป็นสิ่งที่ไม่รู้จัก\n\n" +
+      "ความมืดนี้ไม่ได้กลืนฉัน แต่มันกำลังสร้างฉันใหม่\n\n" +
+      "ฉันยังยืนอยู่ ในที่ที่ตัวตนเดิมของฉันตายลง\n\n" +
+      "และบางที การสูญเสียตัวเอง คือทางเดียวที่จะได้ตัวเองคืนมา",
+    storyEn:
+      "I have not disappeared. I am only becoming something unknown.\n\n" +
+      "This darkness does not devour me — it is remaking me.\n\n" +
+      "I still stand, in the place where my old self died.\n\n" +
+      "And perhaps losing yourself is the only way to get yourself back.",
+  },
 ];
