@@ -10,6 +10,8 @@ const ADS = [
   { image: "/images/merch-lifestyle-gallery.png",   tag: "Merch",  title: "โคตรเสียว",        desc: "เสื้อยืด limited · 3 สี\nดำ · ขาว · น้ำเงิน", link: "https://s.shopee.co.th/17ZEn4Vl5", linkText: "สั่งซื้อที่ Shopee" },
   { image: "/images/merch-lifestyle-gallery-bw.png",tag: "Merch",  title: "โคตรเสียว",        desc: "เสื้อยืด limited · 3 สี\nดำ · ขาว · น้ำเงิน", link: "https://s.shopee.co.th/17ZEn4Vl5", linkText: "สั่งซื้อที่ Shopee" },
   { image: "/images/merch-lifestyle-sea.png",       tag: "Merch",  title: "โคตรเสียว",        desc: "เสื้อยืด limited · 3 สี\nดำ · ขาว · น้ำเงิน", link: "https://s.shopee.co.th/17ZEn4Vl5", linkText: "สั่งซื้อที่ Shopee" },
+  { image: "/images/merch-washed-flat.jpg",         tag: "Merch",  title: "โคตรเสียว Vintage", desc: "เสื้อยืดสีดำฟอก สไตล์วินเทจ\ncotton 100% · 275G", link: "https://s.shopee.co.th/17ZEn4Vl5", linkText: "สั่งซื้อที่ Shopee" },
+  { image: "/images/merch-washed-box.jpg",          tag: "Merch",  title: "โคตรเสียว Vintage", desc: "เสื้อยืดสีดำฟอก สไตล์วินเทจ\ncotton 100% · 275G", link: "https://s.shopee.co.th/17ZEn4Vl5", linkText: "สั่งซื้อที่ Shopee" },
   { image: "/images/merch-lifestyle-biw.png",       tag: "Artist", title: "บิว โคตรเสียว",    desc: "ศิลปินดิจิทัล · Digital Art 2026",              link: "https://www.instagram.com/khotseaw._", linkText: "ติดตามบน Instagram" },
 ];
 // ─────────────────────────────────────────────────────────────────────
