@@ -1,6 +1,8 @@
 export interface Artwork {
   id: number;
   file: string;
+  /** Painted area width / height (see scripts/build-textures.mjs) — sizes the 3D frame. */
+  ratio: number;
   title: string;
   titleEn: string;
   year: string;
@@ -9,7 +11,7 @@ export interface Artwork {
   storyEn: string;
   /** Optional physical dimensions, e.g. "130 × 200 cm". */
   size?: string;
-  /** Highlight piece: shown in the featured section, excluded from the grid. */
+  /** Highlight piece: opens the 3D tour on the first wall. */
   featured?: boolean;
 }
 
@@ -17,6 +19,7 @@ export const ARTWORKS: Artwork[] = [
   {
     id: 1,
     file: "forest-moon-jellyfish.jpg",
+    ratio: 0.746,
     title: "ดวงจันทร์แห่งป่า",
     titleEn: "Moon of the Forest",
     year: "2024",
@@ -29,6 +32,7 @@ export const ARTWORKS: Artwork[] = [
   {
     id: 2,
     file: "forest-spirits.jpg",
+    ratio: 1.167,
     title: "วิญญาณป่า",
     titleEn: "Forest Spirits",
     year: "2024",
@@ -41,6 +45,7 @@ export const ARTWORKS: Artwork[] = [
   {
     id: 3,
     file: "jellyfish-forest.jpg",
+    ratio: 0.796,
     title: "แมงกะพรุน",
     titleEn: "Jellyfish",
     year: "2023",
@@ -53,6 +58,7 @@ export const ARTWORKS: Artwork[] = [
   {
     id: 4,
     file: "bamboo-forest-light.jpg",
+    ratio: 1.139,
     title: "แสงแห่งไผ่",
     titleEn: "Bamboo Light",
     year: "2024",
@@ -65,6 +71,7 @@ export const ARTWORKS: Artwork[] = [
   {
     id: 5,
     file: "ancient-tree.jpg",
+    ratio: 0.852,
     title: "ต้นไม้โบราณ",
     titleEn: "Ancient Tree",
     year: "2026",
@@ -77,6 +84,7 @@ export const ARTWORKS: Artwork[] = [
   {
     id: 6,
     file: "firefly-forest.jpg",
+    ratio: 1.273,
     title: "ป่าหิ่งห้อย",
     titleEn: "Firefly Forest",
     year: "2025",
@@ -89,6 +97,7 @@ export const ARTWORKS: Artwork[] = [
   {
     id: 7,
     file: "orca-road.jpg",
+    ratio: 0.747,
     title: "วาฬบนถนน",
     titleEn: "Orca on the Road",
     year: "2025",
@@ -101,6 +110,7 @@ export const ARTWORKS: Artwork[] = [
   {
     id: 8,
     file: "eye-storm.jpg",
+    ratio: 0.751,
     title: "สายตาในพายุ",
     titleEn: "Eye in the Storm",
     year: "2026",
@@ -113,6 +123,7 @@ export const ARTWORKS: Artwork[] = [
   {
     id: 9,
     file: "sunflower-eye.jpg",
+    ratio: 0.751,
     title: "ดอกทานตะวันแห่งสายตา",
     titleEn: "Sunflower Eye",
     year: "2026",
@@ -125,6 +136,7 @@ export const ARTWORKS: Artwork[] = [
   {
     id: 10,
     file: "dream-forest.jpg",
+    ratio: 1.228,
     title: "ป่าในฝัน",
     titleEn: "Dream Forest",
     year: "2026",
@@ -137,6 +149,7 @@ export const ARTWORKS: Artwork[] = [
   {
     id: 11,
     file: "blue-tree-3.jpg",
+    ratio: 0.751,
     title: "ต้นไม้สีน้ำเงิน III",
     titleEn: "Blue Tree III",
     year: "2026",
@@ -149,6 +162,7 @@ export const ARTWORKS: Artwork[] = [
   {
     id: 12,
     file: "blue-tree-horizontal.jpg",
+    ratio: 1.346,
     title: "ต้นไม้สีน้ำเงิน",
     titleEn: "Blue Tree",
     year: "2024",
@@ -161,6 +175,7 @@ export const ARTWORKS: Artwork[] = [
   {
     id: 13,
     file: "creature-pink-framed.jpg",
+    ratio: 1.043,
     title: "สิ่งมีชีวิต",
     titleEn: "Creature",
     year: "2026",
@@ -173,6 +188,7 @@ export const ARTWORKS: Artwork[] = [
   {
     id: 14,
     file: "creature-white-framed.jpg",
+    ratio: 1.007,
     title: "สิ่งมีชีวิต II",
     titleEn: "Creature II",
     year: "2026",
@@ -185,6 +201,7 @@ export const ARTWORKS: Artwork[] = [
   {
     id: 15,
     file: "voices-of-the-wilderness.jpg",
+    ratio: 1.500,
     title: "เสียงพูดคุยแห่งพงไพร",
     titleEn: "Voices of the Wilderness",
     year: "2026",
@@ -205,6 +222,7 @@ export const ARTWORKS: Artwork[] = [
   {
     id: 16,
     file: "myself-2.jpg",
+    ratio: 0.751,
     title: "ตัวฉันเอง ชิ้นที่ 2",
     titleEn: "Myself, Piece #2",
     year: "2026",
@@ -221,4 +239,27 @@ export const ARTWORKS: Artwork[] = [
       "I still stand, in the place where my old self died.\n\n" +
       "And perhaps losing yourself is the only way to get yourself back.",
   },
+  {
+    id: 17,
+    file: "moss-drip-tree.jpg",
+    ratio: 0.493,
+    title: "ต้นไม้หยาดมอส",
+    titleEn: "Moss-Drip Tree",
+    year: "2026",
+    medium: "Oil on Canvas",
+    story:
+      "มอสไหลย้อยลงมาเหมือนเวลาที่ไม่เคยหยุด ค่อยๆ ห่มคลุมต้นไม้เก่าแก่ไว้ทีละน้อย\n\n" +
+      "สิ่งที่เกาะอยู่บนลำต้นไม่ใช่บาดแผล แต่คือชีวิตใหม่ที่งอกขึ้นจากชีวิตเดิม — ยิ่งแก่ ยิ่งเต็มไปด้วยสิ่งมีชีวิต\n\n" +
+      "ในความมืดสีน้ำเงิน ต้นไม้ไม่ได้ยืนอยู่ลำพัง มันคือบ้านของทุกอย่างที่อาศัยมันอยู่",
+    storyEn:
+      "The moss pours down like time that never stops, slowly wrapping the ancient tree, a little at a time.\n\n" +
+      "What clings to its trunk is not a wound but new life growing out of the old — the older it grows, the more alive it becomes.\n\n" +
+      "In the blue darkness the tree does not stand alone. It is home to everything that lives upon it.",
+  },
+];
+
+/** Order of the 3D tour: the featured piece first, then newest additions first. */
+export const TOUR: Artwork[] = [
+  ...ARTWORKS.filter((a) => a.featured),
+  ...ARTWORKS.filter((a) => !a.featured).sort((a, b) => b.id - a.id),
 ];

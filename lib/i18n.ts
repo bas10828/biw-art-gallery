@@ -34,12 +34,15 @@ export function alternatePath(currentPath: string, target: Locale): string {
 
 type Dict = {
   nav: {
-    miniGames: string;
-    logout: string;
+    works: string;
+    soundOn: string;
+    soundOff: string;
     switchTo: string; // label of the language toggle (the OTHER language)
   };
   hero: {
     badge: string;
+    exhibition: string;
+    enter: string;
     line1: string;
     line2: string;
     line3: string;
@@ -57,6 +60,13 @@ type Dict = {
     eyebrow: string;
     cta: string;
   };
+  tour: {
+    newWork: string;
+    loading: string;
+    indexTitle: string;
+    close: string;
+    backToTop: string;
+  };
   modal: {
     eyebrow: string;
   };
@@ -68,12 +78,15 @@ type Dict = {
 export const DICT: Record<Locale, Dict> = {
   th: {
     nav: {
-      miniGames: "Mini Games",
-      logout: "ออกจากระบบ",
+      works: "ผลงานทั้งหมด",
+      soundOn: "เปิดเพลง",
+      soundOff: "ปิดเพลง",
       switchTo: "EN",
     },
     hero: {
       badge: "khodseaw",
+      exhibition: "นิทรรศการออนไลน์",
+      enter: "เลื่อนลงเพื่อเข้าชม",
       line1: "ไม่ใช่ศิลปะเพื่อความสวยงาม",
       line2: "มันคือแรงกระแทกในหัวใจ",
       line3: "เสียงของเลือดที่กำลังเดือดปะทุอยู่ข้างใน",
@@ -89,8 +102,15 @@ export const DICT: Record<Locale, Dict> = {
       bio3: "สำหรับอักษรวิจิตร ต้นไม้ทุกต้นคือภาพเหมือนของมนุษย์ และป่าทุกผืนคือบทสนทนาระหว่างความโดดเดี่ยวกับการเชื่อมโยง ซึ่งยังคงดำเนินต่อไปอย่างไม่มีที่สิ้นสุด",
     },
     featured: {
-      eyebrow: "ผลงานล่าสุด",
-      cta: "ดูผลงานเต็ม",
+      eyebrow: "ผลงานเด่น",
+      cta: "อ่านเรื่องราว",
+    },
+    tour: {
+      newWork: "ผลงานใหม่",
+      loading: "กำลังจัดแสงในห้องแสดงงาน",
+      indexTitle: "ผลงานทั้งหมด",
+      close: "ปิด",
+      backToTop: "กลับไปทางเข้า",
     },
     modal: {
       eyebrow: "✦ Original Artwork",
@@ -101,12 +121,15 @@ export const DICT: Record<Locale, Dict> = {
   },
   en: {
     nav: {
-      miniGames: "Mini Games",
-      logout: "Log out",
+      works: "All works",
+      soundOn: "Play music",
+      soundOff: "Mute music",
       switchTo: "ไทย",
     },
     hero: {
       badge: "khodseaw",
+      exhibition: "Online Exhibition",
+      enter: "Scroll to enter",
       line1: "Not art made to be pretty",
       line2: "it is a blow struck to the heart",
       line3: "the sound of blood boiling within",
@@ -122,8 +145,15 @@ export const DICT: Record<Locale, Dict> = {
       bio3: "For Aksonwichit, every tree is a portrait of a human being, and every forest a dialogue between solitude and connection — one that goes on without end.",
     },
     featured: {
-      eyebrow: "Latest Work",
-      cta: "View full piece",
+      eyebrow: "Featured",
+      cta: "Read the story",
+    },
+    tour: {
+      newWork: "New work",
+      loading: "Lighting the gallery",
+      indexTitle: "All works",
+      close: "Close",
+      backToTop: "Back to the entrance",
     },
     modal: {
       eyebrow: "✦ Original Artwork",

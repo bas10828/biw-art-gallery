@@ -1,8 +1,10 @@
 import type { MetadataRoute } from "next";
+import { TOUR } from "@/lib/artworks";
 
 const BASE_URL = "https://biwkhodseaw.22422522.xyz";
 
 export default function sitemap(): MetadataRoute.Sitemap {
+  const images = TOUR.map((a) => `${BASE_URL}/images/${a.file}`);
   const homeAlternates = {
     languages: { th: BASE_URL, en: `${BASE_URL}/en` },
   };
@@ -13,7 +15,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: "weekly",
       priority: 1,
       alternates: homeAlternates,
-      images: [`${BASE_URL}/images/voices-of-the-wilderness.jpg`],
+      images,
     },
     {
       url: `${BASE_URL}/en`,
@@ -21,11 +23,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: "weekly",
       priority: 0.9,
       alternates: homeAlternates,
-      images: [`${BASE_URL}/images/voices-of-the-wilderness.jpg`],
+      images,
     },
-    { url: `${BASE_URL}/game`, lastModified: new Date(), changeFrequency: "monthly", priority: 0.7 },
-    { url: `${BASE_URL}/game/jigsaw`, lastModified: new Date(), changeFrequency: "monthly", priority: 0.6 },
-    { url: `${BASE_URL}/leaderboard`, lastModified: new Date(), changeFrequency: "daily", priority: 0.6 },
-    { url: `${BASE_URL}/bomberman`, lastModified: new Date(), changeFrequency: "monthly", priority: 0.5 },
   ];
 }

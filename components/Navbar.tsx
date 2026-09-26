@@ -2,107 +2,52 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
 import { alternatePath, localizePath } from "@/lib/i18n";
 import { useT } from "@/lib/useLocale";
+import SoundToggle from "@/components/gallery/SoundToggle";
 
-export default function Navbar() {
+export default function Navbar({ onOpenIndex }: { onOpenIndex?: () => void }) {
   const { locale, t } = useT();
   const pathname = usePathname() || "/";
   const otherLocale = locale === "th" ? "en" : "th";
-  const [user, setUser] = useState<string | null>(null);
-
-  useEffect(() => {
-    const u = localStorage.getItem("biw_user");
-    if (u) setUser(JSON.parse(u).username);
-  }, []);
-
-  function logout() {
-    localStorage.removeItem("biw_user");
-    document.cookie = "token=; max-age=0; path=/";
-    setUser(null);
-    window.location.reload();
-  }
 
   return (
     <nav
-      className="fixed top-0 inset-x-0 z-50 flex items-center justify-between px-4 sm:px-8 py-3"
-      style={{
-        background: "linear-gradient(180deg,rgba(8,8,8,.97) 0%,rgba(8,8,8,.8) 100%)",
-        backdropFilter: "blur(12px)",
-        borderBottom: "1px solid rgba(212,168,67,.12)",
-      }}
+      className="fixed top-0 inset-x-0 z-50 flex items-center justify-between px-4 sm:px-8 py-3 sm:py-4"
+      style={{ background: "linear-gradient(180deg,rgba(3,5,11,.85) 0%,rgba(3,5,11,0) 100%)" }}
     >
-      {/* Logo */}
       <Link href={localizePath("/", locale)} className="flex items-center flex-shrink-0">
         <Image
           src="/images/logo-khodseaw.png"
           alt="Biw Art Gallery"
           width={110}
           height={44}
+          priority
           className="object-contain"
-          style={{ height: 44, width: "auto" }}
+          style={{ height: 40, width: "auto" }}
         />
       </Link>
 
-      {/* Right side */}
-      <div className="flex items-center gap-2 sm:gap-3">
-        {user && (
-          <>
-            {/* Username — desktop only */}
-            <span className="hidden sm:inline text-gold text-sm truncate max-w-[120px]">
-              ✦ {user}
-            </span>
-            {/* Logout — icon on mobile, text on desktop */}
-            <button
-              onClick={logout}
-              title={t.nav.logout}
-              className="flex items-center justify-center rounded-full transition-colors text-ink2 hover:text-ink"
-              style={{
-                border: "1px solid rgba(212,168,67,.2)",
-                width: 32,
-                height: 32,
-                fontSize: 13,
-              }}
-            >
-              ✕
-            </button>
-          </>
+      <div className="flex items-center gap-2">
+        {onOpenIndex && (
+          <button onClick={onOpenIndex} className="nav-pill">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden>
+              <rect x="0" y="0" width="5" height="5" rx="1" />
+              <rect x="7" y="0" width="5" height="5" rx="1" />
+              <rect x="0" y="7" width="5" height="5" rx="1" />
+              <rect x="7" y="7" width="5" height="5" rx="1" />
+            </svg>
+            <span className="hidden sm:inline">{t.nav.works}</span>
+          </button>
         )}
-
-        {/* Language toggle */}
+        <SoundToggle />
         <Link
           href={alternatePath(pathname, otherLocale)}
+          hrefLang={otherLocale}
           title={otherLocale === "en" ? "English" : "ภาษาไทย"}
-          className="flex items-center justify-center rounded-full transition-colors text-ink2 hover:text-gold text-xs font-semibold"
-          style={{
-            border: "1px solid rgba(212,168,67,.2)",
-            minWidth: 36,
-            height: 32,
-            padding: "0 10px",
-          }}
+          className="nav-pill"
         >
           {t.nav.switchTo}
-        </Link>
-
-        {/* Mini Games — icon only on mobile, full on desktop */}
-        <Link
-          href={localizePath("/game", locale)}
-          className="flex items-center gap-1.5 rounded-full font-bold transition-all hover:-translate-y-0.5"
-          style={{
-            background: "linear-gradient(135deg,#d4a843 0%,#b88a28 100%)",
-            color: "#1a1000",
-            padding: "7px 14px",
-          }}
-          onMouseEnter={(e) =>
-            ((e.currentTarget as HTMLElement).style.boxShadow = "0 6px 24px rgba(212,168,67,.4)")
-          }
-          onMouseLeave={(e) =>
-            ((e.currentTarget as HTMLElement).style.boxShadow = "none")
-          }
-        >
-          <span className="text-base leading-none">🎮</span>
-          <span className="hidden sm:inline text-sm">{t.nav.miniGames}</span>
         </Link>
       </div>
     </nav>

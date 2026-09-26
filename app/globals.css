@@ -43,3 +43,238 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(212, 168, 67, 0.45);
 }
+
+/* ── Gallery tour ─────────────────────────────────────────────────────── */
+
+/* Side-by-side card layout. Must match isWideLayout() in lib/gallery/layout.ts. */
+@custom-variant wide (@media (min-width: 768px) and (orientation: landscape));
+
+body {
+  background-color: #03050b;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.nav-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  height: 2.25rem;
+  min-width: 2.25rem;
+  padding: 0 0.9rem;
+  border-radius: 999px;
+  border: 1px solid rgba(212, 168, 67, 0.22);
+  background: rgba(8, 10, 18, 0.45);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: var(--color-ink2);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+.nav-pill:hover {
+  color: var(--color-gold-light);
+  border-color: rgba(212, 168, 67, 0.5);
+}
+
+.hero-title {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: clamp(3rem, 11vw, 8.5rem);
+  line-height: 0.95;
+  letter-spacing: -0.02em;
+  background: linear-gradient(160deg, #ffffff 35%, var(--color-gold-light) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: 0 0 60px rgba(60, 140, 255, 0.15);
+}
+.hero-title em {
+  font-style: italic;
+  display: block;
+}
+@media (min-width: 640px) {
+  .hero-title em {
+    display: inline;
+  }
+}
+
+@keyframes hero-rise {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+.hero-rise {
+  animation: hero-rise 1.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.scroll-cue {
+  position: relative;
+  display: block;
+  width: 1px;
+  height: 3rem;
+  overflow: hidden;
+  background: rgba(240, 235, 224, 0.15);
+}
+.scroll-cue::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--color-gold);
+  animation: scroll-cue 2.2s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+@keyframes scroll-cue {
+  0% { transform: translateY(-100%); }
+  60%, 100% { transform: translateY(100%); }
+}
+
+/* Keeps text legible over the 3D scene: bottom fade on phones, left fade on wide screens. */
+.stage-scrim {
+  background: linear-gradient(0deg, rgba(3, 5, 11, 0.95) 0%, rgba(3, 5, 11, 0.82) 34%, rgba(3, 5, 11, 0) 54%);
+}
+@variant wide {
+  .stage-scrim {
+    background: linear-gradient(90deg, rgba(3, 5, 11, 0.88) 0%, rgba(3, 5, 11, 0.55) 30%, rgba(3, 5, 11, 0) 48%);
+  }
+}
+
+.tour-section {
+  position: relative;
+  display: flex;
+  height: 100svh;
+  align-items: flex-end;
+  padding: 0 1.25rem max(2rem, env(safe-area-inset-bottom));
+}
+@variant wide {
+  .tour-section {
+    align-items: center;
+    padding: 0 0 0 7vw;
+  }
+}
+.tour-section-flat {
+  padding: 4rem 1.25rem;
+  display: flex;
+  justify-content: center;
+}
+
+.tour-card {
+  width: 100%;
+  max-width: 26rem;
+}
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .tour-section .tour-card {
+      animation: card-in linear both;
+      animation-timeline: view();
+      animation-range: cover 5% cover 95%;
+    }
+  }
+}
+@keyframes card-in {
+  0% { opacity: 0; transform: translateY(48px); }
+  35%, 65% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: translateY(-48px); }
+}
+
+.tour-title {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: clamp(2rem, 7vw, 3.4rem);
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+  color: var(--color-ink);
+}
+@variant wide {
+  .tour-title {
+    font-size: clamp(2.2rem, 3.6vw, 3.6rem);
+  }
+}
+.tour-meta {
+  border-top: 1px solid rgba(212, 168, 67, 0.18);
+  border-bottom: 1px solid rgba(212, 168, 67, 0.18);
+}
+.tour-excerpt {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+@variant wide {
+  .tour-excerpt {
+    -webkit-line-clamp: 6;
+  }
+}
+@media (max-height: 520px) {
+  .tour-excerpt {
+    display: none;
+  }
+}
+
+.tour-rail {
+  display: none;
+  transition: opacity 0.6s;
+}
+@variant wide {
+  .tour-rail {
+    display: flex;
+  }
+}
+
+.about-section {
+  background: linear-gradient(180deg, rgba(3, 5, 11, 0) 0%, #03050b 26svh);
+}
+
+@keyframes overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.overlay-in {
+  animation: overlay-in 0.35s ease-out both;
+}
+
+@keyframes sound-bar {
+  0%, 100% { height: 3px; }
+  50% { height: 14px; }
+}
+.sound-bar {
+  animation: sound-bar 0.9s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-rise,
+  .scroll-cue::after,
+  .sound-bar {
+    animation: none;
+  }
+}
+
+/* Wide tracking splits Thai vowels and tone marks from their consonants. */
+[class*="tracking-["]:lang(th) {
+  letter-spacing: 0.04em;
+}
+
+/* Dark pool behind the entrance title so it reads over the glowing tree. */
+.hero-veil::before {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 70%;
+  background: radial-gradient(ellipse 60% 55% at 50% 72%, rgba(3, 5, 11, 0.78), rgba(3, 5, 11, 0) 70%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* On phones the popup would cover the painting; show it only at the entrance and the end. */
+@media not ((min-width: 768px) and (orientation: landscape)), (max-height: 600px) {
+  html[data-tour="on"] .merch-popup {
+    display: none;
+  }
+}

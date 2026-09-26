@@ -1,19 +1,99 @@
 "use client";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import Image from "next/image";
 import Navbar from "@/components/Navbar";
 import ArtModal from "@/components/ArtModal";
 import Footer from "@/components/Footer";
-import { ARTWORKS, type Artwork } from "@/lib/artworks";
+import IndexOverlay from "@/components/gallery/IndexOverlay";
+import { TOUR, type Artwork } from "@/lib/artworks";
 import { SITE_URL } from "@/lib/i18n";
+import { tourState } from "@/lib/gallery/tourState";
 import { useT } from "@/lib/useLocale";
+
+const GalleryStage = dynamic(() => import("@/components/gallery/GalleryStage"), { ssr: false });
+
+const N = TOUR.length;
+const NEWEST_ID = Math.max(...TOUR.filter((a) => !a.featured).map((a) => a.id));
+const pad = (n: number) => String(n).padStart(2, "0");
+
+function supportsWebGL() {
+  try {
+    const c = document.createElement("canvas");
+    return !!(c.getContext("webgl2") || c.getContext("webgl"));
+  } catch {
+    return false;
+  }
+}
 
 export default function HomePage() {
   const { locale, t } = useT();
   const [selected, setSelected] = useState<Artwork | null>(null);
+  const [indexOpen, setIndexOpen] = useState(false);
+  const [mode, setMode] = useState<"pending" | "3d" | "2d">("pending");
+  const [active, setActive] = useState(0);
+  const [paused, setPaused] = useState(false);
 
-  const featured = ARTWORKS.find((a) => a.featured);
-  const gridArtworks = ARTWORKS.filter((a) => !a.featured);
+  const sections = useRef<(HTMLElement | null)[]>([]);
+  const tops = useRef<number[]>([]);
+  const bar = useRef<HTMLDivElement>(null);
+
+  useEffect(() => setMode(supportsWebGL() ? "3d" : "2d"), []);
+
+  // Scroll position -> tour progress (0 entrance, 1..N paintings, N+1 exit).
+  useEffect(() => {
+    const measure = () => {
+      tops.current = sections.current.map((el) =>
+        el ? el.getBoundingClientRect().top + window.scrollY : 0
+      );
+    };
+    const update = () => {
+      const y = window.scrollY;
+      const ts = tops.current;
+      let p = 0;
+      for (let i = 0; i < ts.length - 1; i++) {
+        if (y >= ts[i]) p = i + Math.min(1, (y - ts[i]) / Math.max(1, ts[i + 1] - ts[i]));
+      }
+      const last = ts.length - 1;
+      if (y > ts[last]) p = last + (y - ts[last]) / window.innerHeight;
+      tourState.progress = p;
+      const a = Math.round(Math.min(p, N + 1));
+      setActive(a);
+      // Lets CSS hide overlays (the merch popup) on small screens mid-tour.
+      document.documentElement.dataset.tour = a >= 1 && a <= N ? "on" : "off";
+      setPaused(p > N + 1.8);
+      if (bar.current) bar.current.style.transform = `scaleX(${Math.min(1, p / (N + 1))})`;
+    };
+    const onPointer = (e: PointerEvent) => {
+      tourState.pointerX = (e.clientX / window.innerWidth) * 2 - 1;
+      tourState.pointerY = -((e.clientY / window.innerHeight) * 2 - 1);
+    };
+    measure();
+    update();
+    const ro = new ResizeObserver(() => {
+      measure();
+      update();
+    });
+    ro.observe(document.body);
+    window.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("pointermove", onPointer, { passive: true });
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("scroll", update);
+      window.removeEventListener("pointermove", onPointer);
+      delete document.documentElement.dataset.tour;
+    };
+  }, [mode]);
+
+  const goTo = useCallback((section: number) => {
+    const el = sections.current[section];
+    if (!el) return;
+    window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY, behavior: "smooth" });
+  }, []);
+
+  const openFromScene = useCallback((index: number) => setSelected(TOUR[index]), []);
+  const closeModal = useCallback(() => setSelected(null), []);
+  const closeIndex = useCallback(() => setIndexOpen(false), []);
 
   const artist = {
     "@type": "Person",
@@ -22,27 +102,7 @@ export default function HomePage() {
     jobTitle: locale === "en" ? "Painter" : "จิตรกร",
     nationality: "Thai",
     description: t.about.short,
-    sameAs: [
-      "https://www.instagram.com/khotseaw._",
-      "https://www.facebook.com/khotseaw05",
-    ],
-  };
-
-  const featuredJsonLd = featured && {
-    "@context": "https://schema.org",
-    "@type": "VisualArtwork",
-    name: locale === "en" ? featured.titleEn : featured.title,
-    alternateName: locale === "en" ? featured.title : featured.titleEn,
-    image: `${SITE_URL}/images/${featured.file}`,
-    creator: artist,
-    artform: "Painting",
-    artMedium: featured.medium,
-    artworkSurface: "Canvas",
-    width: { "@type": "QuantitativeValue", value: 130, unitCode: "CMT" },
-    height: { "@type": "QuantitativeValue", value: 200, unitCode: "CMT" },
-    dateCreated: featured.year,
-    inLanguage: locale,
-    abstract: (locale === "en" ? featured.storyEn : featured.story).replace(/\n\n/g, " "),
+    sameAs: ["https://www.instagram.com/khotseaw._", "https://www.facebook.com/khotseaw05"],
   };
 
   const jsonLd = {
@@ -53,254 +113,221 @@ export default function HomePage() {
     url: locale === "en" ? `${SITE_URL}/en` : SITE_URL,
     inLanguage: locale,
     creator: artist,
+    hasPart: TOUR.map((a) => ({
+      "@type": "VisualArtwork",
+      name: locale === "en" ? a.titleEn : a.title,
+      alternateName: locale === "en" ? a.title : a.titleEn,
+      image: `${SITE_URL}/images/${a.file}`,
+      artform: "Painting",
+      artMedium: a.medium,
+      artworkSurface: "Canvas",
+      dateCreated: a.year,
+      ...(a.size ? { size: a.size } : {}),
+      abstract: (locale === "en" ? a.storyEn : a.story).replace(/\n\n/g, " "),
+    })),
   };
+
+  const is2d = mode === "2d";
 
   return (
     <>
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-      />
-      {featuredJsonLd && (
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(featuredJsonLd) }}
-        />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <Navbar onOpenIndex={() => setIndexOpen(true)} />
+
+      {/* Tour progress */}
+      <div className="fixed inset-x-0 top-0 z-[60] h-[2px] bg-white/5">
+        <div ref={bar} className="h-full origin-left bg-gold" style={{ transform: "scaleX(0)" }} />
+      </div>
+
+      {mode === "3d" && (
+        <>
+          <GalleryStage loadingLabel={t.tour.loading} onSelect={openFromScene} paused={paused || !!selected} />
+          <div className="stage-scrim pointer-events-none fixed inset-0 z-[1]" aria-hidden />
+        </>
       )}
-      <Navbar />
 
-      {/* Hero */}
-      <section className="relative flex flex-col items-center justify-center text-center pt-40 pb-20 px-6 overflow-hidden">
-        {/* Background image — CSS bg for guaranteed early LCP preload */}
-        <div
-          className="absolute inset-0 bg-cover bg-center"
-          style={{ backgroundImage: "url('/images/exhibition-trees.webp')" }}
-        />
-        {/* Dark overlay */}
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{ background: "linear-gradient(to bottom, rgba(0,0,0,.72) 0%, rgba(0,0,0,.55) 60%, rgba(0,0,0,.85) 100%)" }}
-        />
-        <span
-          className="relative inline-block text-gold text-xs tracking-[.2em] uppercase border rounded-full px-4 py-1.5 mb-5"
-          style={{ borderColor: "rgba(212,168,67,.2)" }}
+      {/* Desktop rail */}
+      {!is2d && (
+        <nav
+          aria-label={t.tour.indexTitle}
+          className="tour-rail fixed right-5 top-1/2 z-40 -translate-y-1/2 flex-col items-end gap-[7px]"
+          style={{ opacity: active >= 1 && active <= N ? 1 : 0 }}
         >
-          {t.hero.badge}
-        </span>
-        <h1
-          className="relative font-bold leading-tight mb-4"
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontSize: "clamp(2.5rem,6vw,4.5rem)",
-            background: "linear-gradient(135deg,#ffffff 30%,var(--color-gold-light) 100%)",
-            WebkitBackgroundClip: "text",
-            WebkitTextFillColor: "transparent",
-            backgroundClip: "text",
-          }}
-        >
-          Biw Art Gallery
-        </h1>
-        <p className="relative text-white/70 font-light max-w-md leading-relaxed">
-          {t.hero.line1}<br />
-          {t.hero.line2}<br />
-          {t.hero.line3}
-        </p>
-        <div
-          className="relative w-16 h-px mt-10"
-          style={{
-            background: "linear-gradient(90deg,transparent,var(--color-gold),transparent)",
-          }}
-        />
-      </section>
-
-      {/* Featured / Highlight */}
-      {featured && (
-        <section className="max-w-7xl mx-auto px-6 pb-24">
-          <div
-            className="group grid grid-cols-1 md:grid-cols-2 rounded-2xl overflow-hidden border"
-            style={{ borderColor: "rgba(212,168,67,.18)", background: "var(--color-bg3)" }}
-          >
-            {/* Image */}
+          {TOUR.map((a, i) => (
             <button
-              onClick={() => setSelected(featured)}
-              className="relative block w-full aspect-[3/2] md:aspect-auto md:min-h-[26rem] overflow-hidden cursor-zoom-in"
+              key={a.id}
+              onClick={() => goTo(i + 1)}
+              aria-label={locale === "en" ? a.titleEn : a.title}
+              aria-current={active === i + 1}
+              className="group flex items-center gap-3 py-[3px]"
             >
-              <Image
-                src={`/images/${featured.file}`}
-                alt={locale === "en" ? featured.titleEn : featured.title}
-                fill
-                className="object-cover transition-transform duration-700 group-hover:scale-[1.03]"
-                sizes="(max-width:768px) 100vw, 50vw"
-                priority
+              <span
+                lang="en"
+                className="text-[10px] tracking-[.15em] text-gold-light transition-opacity duration-300"
+                style={{ opacity: active === i + 1 ? 1 : 0 }}
+              >
+                {pad(i + 1)}
+              </span>
+              <span
+                className="block h-px bg-current transition-all duration-500 group-hover:w-6 group-hover:text-gold-light"
+                style={{
+                  width: active === i + 1 ? 28 : 12,
+                  color: active === i + 1 ? "var(--color-gold)" : "rgba(240,235,224,.35)",
+                }}
               />
             </button>
+          ))}
+        </nav>
+      )}
 
-            {/* Text */}
-            <div className="flex flex-col justify-center gap-4 px-8 py-10 md:px-12">
-              <span
-                className="text-gold text-xs tracking-[.2em] uppercase border rounded-full px-4 py-1.5 self-start"
-                style={{ borderColor: "rgba(212,168,67,.25)" }}
-              >
-                {t.featured.eyebrow}
-              </span>
-              <h2
-                className="font-bold leading-tight"
-                style={{
-                  fontFamily: "var(--font-serif)",
-                  fontSize: "clamp(1.6rem,3.2vw,2.4rem)",
-                  background: "linear-gradient(135deg,#ffffff 30%,var(--color-gold-light) 100%)",
-                  WebkitBackgroundClip: "text",
-                  WebkitTextFillColor: "transparent",
-                  backgroundClip: "text",
-                }}
-              >
-                {locale === "en" ? featured.titleEn : featured.title}
-              </h2>
-              <p className="text-ink2 text-sm italic -mt-1">
-                {locale === "en" ? featured.title : featured.titleEn}
-              </p>
-              <p
-                className="text-xs text-ink3 py-3 border-y"
-                style={{ borderColor: "rgba(212,168,67,.12)" }}
-              >
-                {featured.medium}
-                {featured.size ? ` · ${featured.size}` : ""} · {featured.year}
-              </p>
-              <div className="flex flex-col gap-3 text-ink2 text-sm leading-relaxed italic">
-                {(locale === "en" ? featured.storyEn : featured.story)
-                  .split("\n\n")
-                  .slice(0, 2)
-                  .map((p, i) => (
-                    <p key={i}>{p}</p>
-                  ))}
+      <main className={`relative z-10 ${is2d ? "" : "pointer-events-none"}`}>
+        {/* Entrance */}
+        <section
+          ref={(el) => {
+            sections.current[0] = el;
+          }}
+          className="hero-veil relative isolate flex h-svh flex-col items-center justify-end px-6 pb-[13svh] text-center"
+        >
+          <p className="hero-rise mb-5 text-[11px] tracking-[.35em] uppercase text-gold" style={{ animationDelay: ".1s" }}>
+            <span lang="en">{t.hero.badge}</span> <span className="text-ink3">—</span> {t.hero.exhibition}
+          </p>
+          <h1 className="hero-title hero-rise" style={{ animationDelay: ".25s" }}>
+            Biw Art <em>Gallery</em>
+          </h1>
+          <p className="hero-rise mt-6 max-w-md text-sm font-light leading-relaxed text-ink/75 sm:text-base" style={{ animationDelay: ".45s" }}>
+            {t.hero.line1}
+            <br />
+            {t.hero.line2}
+            <br />
+            {t.hero.line3}
+          </p>
+          <button
+            onClick={() => goTo(1)}
+            className="hero-rise pointer-events-auto mt-10 flex flex-col items-center gap-3 text-[11px] tracking-[.3em] uppercase text-ink2 transition-colors hover:text-gold-light"
+            style={{ animationDelay: ".7s" }}
+          >
+            {t.hero.enter}
+            <span className="scroll-cue" aria-hidden />
+          </button>
+        </section>
+
+        {/* One section per painting */}
+        {TOUR.map((art, i) => {
+          const title = locale === "en" ? art.titleEn : art.title;
+          const alt = locale === "en" ? art.title : art.titleEn;
+          const story = (locale === "en" ? art.storyEn : art.story).split("\n\n");
+          const badge = art.featured ? t.featured.eyebrow : art.id === NEWEST_ID ? t.tour.newWork : null;
+          return (
+            <section
+              key={art.id}
+              id={`work-${art.id}`}
+              ref={(el) => {
+                sections.current[i + 1] = el;
+              }}
+              aria-labelledby={`work-${art.id}-title`}
+              className={is2d ? "tour-section-flat" : "tour-section"}
+            >
+              <article className="tour-card pointer-events-auto">
+                {is2d && (
+                  <button onClick={() => setSelected(art)} className="mb-6 block w-full overflow-hidden rounded-sm">
+                    <Image
+                      src={`/images/${art.file}`}
+                      alt={title}
+                      width={900}
+                      height={Math.round(900 / art.ratio)}
+                      sizes="(max-width:768px) 100vw, 640px"
+                      className="h-auto w-full"
+                    />
+                  </button>
+                )}
+                <p className="mb-4 flex items-center gap-3 text-[11px] tracking-[.25em] uppercase">
+                  <span lang="en" className="text-gold">No. {pad(i + 1)}</span>
+                  <span lang="en" className="text-ink3">/ {pad(N)}</span>
+                  {badge && (
+                    <span className="rounded-full border border-gold/40 px-2.5 py-0.5 text-[9px] tracking-[.2em] text-gold-light">
+                      {badge}
+                    </span>
+                  )}
+                </p>
+                <h2 id={`work-${art.id}-title`} className="tour-title">
+                  {title}
+                </h2>
+                <p className="mt-2 font-serif text-sm italic text-ink2 sm:text-base">{alt}</p>
+                <p lang="en" className="tour-meta mt-4 py-3 text-[11px] tracking-[.12em] uppercase text-ink3">
+                  {art.medium}
+                  {art.size ? ` · ${art.size}` : ""} · {art.year}
+                </p>
+                <p className="tour-excerpt mt-4 text-sm leading-relaxed text-ink/80">{story[0]}</p>
+                <button
+                  onClick={() => setSelected(art)}
+                  className="group mt-5 inline-flex items-center gap-2 text-xs tracking-[.2em] uppercase text-gold transition-colors hover:text-gold-light"
+                >
+                  {t.featured.cta}
+                  <span className="transition-transform duration-300 group-hover:translate-x-1">→</span>
+                </button>
+              </article>
+            </section>
+          );
+        })}
+
+        {/* About the Artist */}
+        <section
+          ref={(el) => {
+            sections.current[N + 1] = el;
+          }}
+          className="about-section pointer-events-auto relative"
+        >
+          <div className="mx-auto max-w-6xl px-5 pb-24 pt-[28svh] sm:px-8">
+            <div className="grid items-center gap-10 md:grid-cols-[1fr_1.1fr] md:gap-16">
+              <div className="relative aspect-[4/5] overflow-hidden rounded-sm md:aspect-[4/5]">
+                <Image
+                  src="/images/artist-gallery.png"
+                  alt={`${t.about.realName} (${t.about.name})`}
+                  fill
+                  className="object-cover"
+                  sizes="(max-width:768px) 100vw, 45vw"
+                />
+                <div className="absolute inset-0" style={{ background: "linear-gradient(180deg,transparent 55%,rgba(3,5,11,.7))" }} />
               </div>
+              <div>
+                <p className="mb-5 text-[11px] tracking-[.3em] uppercase text-gold">{t.about.badge}</p>
+                <h2 className="tour-title">{t.about.name}</h2>
+                <p className="mt-2 font-serif text-base italic text-ink2">{t.about.realName}</p>
+                <div className="my-7 h-px w-12 bg-gold/60" />
+                <p className="text-base leading-relaxed text-ink/85">{t.about.short}</p>
+              </div>
+            </div>
+
+            <article className="mx-auto mt-16 flex max-w-3xl flex-col gap-6 leading-loose text-ink2 sm:mt-24">
+              <p>{t.about.bio1}</p>
+              <p>{t.about.bio2}</p>
+              <p className="font-serif text-lg leading-relaxed text-ink sm:text-xl">{t.about.bio3}</p>
+            </article>
+
+            <div className="mt-16 flex justify-center">
               <button
-                onClick={() => setSelected(featured)}
-                className="self-start mt-2 text-gold text-sm tracking-wide hover:text-gold-light transition-colors"
+                onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+                className="text-[11px] tracking-[.3em] uppercase text-ink3 transition-colors hover:text-gold-light"
               >
-                {t.featured.cta} →
+                ↑ {t.tour.backToTop}
               </button>
             </div>
           </div>
+          <Footer />
         </section>
+      </main>
+
+      {indexOpen && (
+        <IndexOverlay
+          works={TOUR}
+          onClose={closeIndex}
+          onPick={(i) => {
+            setIndexOpen(false);
+            requestAnimationFrame(() => goTo(i + 1));
+          }}
+        />
       )}
-
-      {/* Gallery Grid */}
-      <section className="max-w-7xl mx-auto px-6 pb-24">
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-6">
-          {gridArtworks.map((art, i) => (
-            <div
-              key={art.id}
-              onClick={() => setSelected(art)}
-              className="group cursor-pointer rounded-xl overflow-hidden border transition-all duration-300 hover:-translate-y-1.5"
-              style={{
-                background: "var(--color-bg3)",
-                borderColor: "rgba(212,168,67,.12)",
-                animationDelay: `${i * 0.07}s`,
-                boxShadow: "none",
-              }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLElement).style.borderColor = "rgba(212,168,67,.4)";
-                (e.currentTarget as HTMLElement).style.boxShadow = "0 8px 32px rgba(0,0,0,.5)";
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLElement).style.borderColor = "rgba(212,168,67,.12)";
-                (e.currentTarget as HTMLElement).style.boxShadow = "none";
-              }}
-            >
-              <div className="relative aspect-[4/3] overflow-hidden">
-                <Image
-                  src={`/images/${art.file}`}
-                  alt={locale === "en" ? art.titleEn : art.title}
-                  fill
-                  className="object-cover transition-transform duration-500 group-hover:scale-105"
-                  sizes="(max-width:640px) 100vw,(max-width:1024px) 50vw,33vw"
-                />
-                <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/35 transition-all duration-300">
-                  <span className="text-gold-light text-2xl opacity-0 scale-50 group-hover:opacity-100 group-hover:scale-100 transition-all duration-300">
-                    ✦
-                  </span>
-                </div>
-              </div>
-              <div className="p-4">
-                <h3 className="font-semibold text-ink mb-1" style={{ fontFamily: "var(--font-serif)" }}>
-                  {locale === "en" ? art.titleEn : art.title}
-                </h3>
-                <p className="text-xs text-ink2">
-                  {(locale === "en" ? art.title : art.titleEn)} · {art.year}
-                </p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* About the Artist */}
-      <section className="max-w-5xl mx-auto px-6 pb-24">
-        <div
-          className="rounded-2xl overflow-hidden border flex flex-col md:flex-row"
-          style={{ borderColor: "rgba(212,168,67,.15)", background: "var(--color-bg3)" }}
-        >
-          {/* Image */}
-          <div className="relative w-full md:w-1/2 min-h-72">
-            <Image
-              src="/images/artist-gallery.png"
-              alt={`${t.about.realName} (${t.about.name})`}
-              fill
-              className="object-cover object-center"
-              sizes="(max-width:768px) 100vw, 50vw"
-            />
-            <div
-              className="absolute inset-0"
-              style={{ background: "linear-gradient(to right, transparent 60%, var(--color-bg3))" }}
-            />
-          </div>
-
-          {/* Text */}
-          <div className="flex flex-col justify-center px-8 py-10 md:w-1/2 gap-4">
-            <span
-              className="text-gold text-xs tracking-[.2em] uppercase border rounded-full px-4 py-1.5 self-start"
-              style={{ borderColor: "rgba(212,168,67,.2)" }}
-            >
-              {t.about.badge}
-            </span>
-            <h2
-              className="font-bold leading-tight"
-              style={{
-                fontFamily: "var(--font-serif)",
-                fontSize: "clamp(1.5rem,3vw,2.2rem)",
-                background: "linear-gradient(135deg,#ffffff 30%,var(--color-gold-light) 100%)",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-                backgroundClip: "text",
-              }}
-            >
-              {t.about.name}
-            </h2>
-            <p className="text-ink2 text-sm leading-relaxed" style={{ fontFamily: "var(--font-serif)" }}>
-              {t.about.realName}
-            </p>
-            <div
-              className="w-10 h-px"
-              style={{ background: "linear-gradient(90deg,var(--color-gold),transparent)" }}
-            />
-            <p className="text-ink2 text-sm leading-relaxed">{t.about.short}</p>
-          </div>
-        </div>
-
-        {/* Full bio */}
-        <article className="mt-8 flex flex-col gap-5 text-ink2 leading-loose">
-          <p>{t.about.bio1}</p>
-          <p>{t.about.bio2}</p>
-          <p className="text-ink" style={{ fontFamily: "var(--font-serif)" }}>
-            {t.about.bio3}
-          </p>
-        </article>
-      </section>
-
-      <Footer />
-
-      {selected && <ArtModal art={selected} onClose={() => setSelected(null)} />}
+      {selected && <ArtModal art={selected} onClose={closeModal} />}
     </>
   );
 }

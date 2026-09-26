@@ -62,7 +62,7 @@ export default function MerchPopup() {
 
   return (
     <div
-      className="fixed bottom-6 right-6 z-50 flex items-stretch rounded-2xl overflow-hidden shadow-2xl"
+      className="merch-popup fixed top-16 right-4 sm:top-auto sm:bottom-6 sm:right-6 wide:right-auto wide:left-6 z-50 flex items-stretch rounded-2xl overflow-hidden shadow-2xl"
       style={{
         width: "min(400px, calc(100vw - 2rem))",
         background: "var(--color-bg3)",
@@ -71,7 +71,7 @@ export default function MerchPopup() {
       }}
     >
       {/* Left — product image */}
-      <div className="relative w-36 shrink-0">
+      <div className="relative w-24 sm:w-36 shrink-0">
         <Image
           src={ad.image}
           alt={ad.title}
@@ -98,7 +98,7 @@ export default function MerchPopup() {
           >
             {ad.title}
           </h3>
-          <p className="text-ink2 text-xs leading-relaxed mb-3">
+          <p className="hidden sm:block text-ink2 text-xs leading-relaxed mb-3">
             {ad.desc.split("\n").map((line, i) => (
               <span key={i}>{line}{i < ad.desc.split("\n").length - 1 && <br />}</span>
             ))}

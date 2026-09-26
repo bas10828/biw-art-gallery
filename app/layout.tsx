@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Playfair_Display, Inter } from "next/font/google";
-import { preload } from "react-dom";
 import "./globals.css";
 import MerchPopup from "@/components/MerchPopup";
 import LocaleHtml from "@/components/LocaleHtml";
@@ -81,7 +80,6 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  preload("/images/exhibition-trees.webp", { as: "image", fetchPriority: "high" });
   return (
     <html lang="th" className={`${playfair.variable} ${inter.variable}`}>
       <body>
