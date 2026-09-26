@@ -3,7 +3,7 @@ import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { useTexture } from "@react-three/drei";
 import * as THREE from "three";
-import { PAINTING_Y, WALL_HEIGHT, polar, type Slot } from "@/lib/gallery/layout";
+import { PAINTING_Y, WALL_HEIGHT, type Slot } from "@/lib/gallery/layout";
 import { tourState } from "@/lib/gallery/tourState";
 
 let washTexture: THREE.Texture | null = null;
@@ -58,7 +58,7 @@ export default function Painting({
   quality: "sm" | "lg";
   onSelect: (index: number) => void;
 }) {
-  const { art, w, h, angle, apothem } = slot;
+  const { art, w, h, angle, x, z } = slot;
   const base = art.file.replace(/\.\w+$/, "");
   const texture = useTexture(`/images/tex/${quality}/${base}.webp`, (t) => {
     const tex = t as THREE.Texture;
@@ -71,7 +71,6 @@ export default function Painting({
   const beam = useRef<THREE.ShaderMaterial>(null);
   const lit = useRef(0);
 
-  const [x, z] = polar(angle, apothem - 0.02);
 
   // Beam from a ceiling fixture down onto the painting (local space: +z = into the room).
   const beamGeo = useMemo(() => {
@@ -93,7 +92,7 @@ export default function Painting({
 
   useFrame((_, dt) => {
     // Brighten the painting the camera is visiting; the rest wait in half-light.
-    const target = Math.max(0, 1 - Math.abs(tourState.progress - (index + 1)) * 1.3);
+    const target = Math.max(0, 1 - Math.abs(tourState.cameraProgress - (index + 1)) * 1.3);
     lit.current = THREE.MathUtils.damp(lit.current, target, 4, dt);
     const l = lit.current;
     canvasMat.current?.color.setScalar(0.5 + 0.5 * l);

@@ -66,6 +66,12 @@ type Dict = {
     indexTitle: string;
     close: string;
     backToTop: string;
+    prev: string;
+    next: string;
+    start: string;
+    toArtist: string;
+    finish: string;
+    readBio: string;
   };
   modal: {
     eyebrow: string;
@@ -111,6 +117,12 @@ export const DICT: Record<Locale, Dict> = {
       indexTitle: "ผลงานทั้งหมด",
       close: "ปิด",
       backToTop: "กลับไปทางเข้า",
+      prev: "ภาพก่อนหน้า",
+      next: "ภาพถัดไป",
+      start: "เริ่มเดินชม",
+      toArtist: "รู้จักศิลปิน",
+      finish: "จบการชม",
+      readBio: "อ่านประวัติศิลปิน",
     },
     modal: {
       eyebrow: "✦ Original Artwork",
@@ -154,6 +166,12 @@ export const DICT: Record<Locale, Dict> = {
       indexTitle: "All works",
       close: "Close",
       backToTop: "Back to the entrance",
+      prev: "Previous",
+      next: "Next",
+      start: "Start the walk",
+      toArtist: "Meet the artist",
+      finish: "Finish",
+      readBio: "Read the artist's story",
     },
     modal: {
       eyebrow: "✦ Original Artwork",

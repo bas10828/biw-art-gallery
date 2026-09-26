@@ -1,33 +1,40 @@
-// Geometry of the 3D hall and the camera path through it. Pure math, no React.
+// Geometry of the 3D room and the camera path through it. Pure math, no React.
 //
-// The hall is a polygon whose facets each hold one painting, arranged around a
-// glowing tree in the middle. Angles run clockwise seen from above:
-// angle 0 faces -z, and a point at angle θ, radius r is (r·sinθ, y, -r·cosθ).
+// The room is a rectangle, W wide (x) by D deep (z), with a glowing tree in the
+// middle. The featured painting hangs in the centre of the far wall (z = -D/2),
+// and the rest follow clockwise seen from above: right wall, near wall, left
+// wall, then back along the far wall.
+//
+// Yaw convention: yaw 0 looks toward -z, yaw π/2 toward +x; a camera with yaw ψ
+// looks along (sin ψ, 0, -cos ψ).
 
 import type { Artwork } from "@/lib/artworks";
 
 export const WALL_HEIGHT = 6.5;
 export const PAINTING_Y = 2.05;
 /** Wall space either side of a painting, summed. */
-const FACET_PADDING = 2.3;
+const PADDING = 2.3;
+/** Bare wall kept free at each corner. */
+const CORNER = 1.2;
+/** Room proportions, width : depth. */
+const ASPECT = 1.3;
 
 export interface Slot {
   art: Artwork;
   /** Painting size in world units (≈ metres). */
   w: number;
   h: number;
-  /** Facet centre angle and angular width. */
+  /** Centre of the painting on the wall surface. */
+  x: number;
+  z: number;
+  /** Yaw of a viewer facing the painting (the wall's outward direction). */
   angle: number;
-  span: number;
-  /** Distance from the hall centre to the facet's wall plane. */
-  apothem: number;
-  /** Facet width along the wall. */
-  chord: number;
 }
 
-export interface Hall {
+export interface Room {
   slots: Slot[];
-  radius: number;
+  width: number;
+  depth: number;
 }
 
 export function paintingSize(art: Artwork) {
@@ -37,38 +44,94 @@ export function paintingSize(art: Artwork) {
     : { w: long * art.ratio, h: long };
 }
 
-export function buildHall(tour: Artwork[]): Hall {
-  const sizes = tour.map(paintingSize);
-  const widths = sizes.map((s) => s.w + FACET_PADDING);
-  const perimeter = widths.reduce((a, b) => a + b, 0);
-  const radius = perimeter / (2 * Math.PI);
-
-  let start = -((widths[0] / perimeter) * Math.PI); // centre the first facet on angle 0
-  const slots = tour.map((art, i) => {
-    const span = (widths[i] / perimeter) * 2 * Math.PI;
-    const angle = start + span / 2;
-    start += span;
-    return {
-      art,
-      ...sizes[i],
-      angle,
-      span,
-      apothem: radius * Math.cos(span / 2),
-      chord: 2 * radius * Math.sin(span / 2),
-    };
-  });
-  return { slots, radius };
+/** A straight run of wall that paintings are hung along, in walking order. */
+interface Run {
+  start: [number, number];
+  dir: [number, number];
+  length: number;
+  angle: number;
 }
 
-export const polar = (angle: number, r: number) =>
-  [r * Math.sin(angle), -r * Math.cos(angle)] as const;
+function wallRuns(W: number, D: number, featuredSpan: number): Run[] {
+  const hw = W / 2;
+  const hd = D / 2;
+  const half = hw - CORNER - featuredSpan / 2;
+  return [
+    { start: [featuredSpan / 2, -hd], dir: [1, 0], length: half, angle: 0 }, // far wall, right half
+    { start: [hw, -hd + CORNER], dir: [0, 1], length: D - 2 * CORNER, angle: Math.PI / 2 }, // right
+    { start: [hw - CORNER, hd], dir: [-1, 0], length: W - 2 * CORNER, angle: Math.PI }, // near
+    { start: [-hw, hd - CORNER], dir: [0, -1], length: D - 2 * CORNER, angle: (3 * Math.PI) / 2 }, // left
+    { start: [-hw + CORNER, -hd], dir: [1, 0], length: half, angle: 2 * Math.PI }, // far wall, left half
+  ];
+}
 
-/** One camera pose. Interpolating these field-by-field gives orbital motion. */
+/** Hang paintings into runs in order; null if they don't all fit. */
+function hang(runs: Run[], widths: number[]) {
+  const groups: number[][] = runs.map(() => []);
+  let run = 0;
+  let used = 0;
+  for (let i = 0; i < widths.length; i++) {
+    while (run < runs.length && used + widths[i] > runs[run].length) {
+      run++;
+      used = 0;
+    }
+    if (run >= runs.length) return null;
+    groups[run].push(i);
+    used += widths[i];
+  }
+  return groups;
+}
+
+export function buildRoom(tour: Artwork[]): Room {
+  const sizes = tour.map(paintingSize);
+  const widths = sizes.map((s) => s.w + PADDING);
+  const featuredSpan = widths[0];
+  const rest = widths.slice(1);
+
+  // Smallest room (in 3% steps) whose walls hold every painting.
+  let perimeter = widths.reduce((a, b) => a + b, 0) + 8 * CORNER;
+  for (;;) {
+    const D = perimeter / (2 * (1 + ASPECT));
+    const W = D * ASPECT;
+    const runs = wallRuns(W, D, featuredSpan);
+    const groups = hang(runs, rest);
+    if (groups) {
+      const slots: Slot[] = [
+        { art: tour[0], ...sizes[0], x: 0, z: -D / 2 + 0.02, angle: 0 },
+      ];
+      groups.forEach((group, r) => {
+        const { start, dir, length, angle } = runs[r];
+        const used = group.reduce((a, i) => a + rest[i], 0);
+        const extra = group.length ? (length - used) / group.length : 0;
+        let s = 0;
+        for (const i of group) {
+          const span = rest[i] + extra;
+          const at = s + span / 2;
+          s += span;
+          // Nudge off the wall surface toward the room.
+          const inX = -Math.sin(angle) * 0.02;
+          const inZ = Math.cos(angle) * 0.02;
+          slots.push({
+            art: tour[i + 1],
+            ...sizes[i + 1],
+            x: start[0] + dir[0] * at + inX,
+            z: start[1] + dir[1] * at + inZ,
+            angle,
+          });
+        }
+      });
+      return { slots, width: W, depth: D };
+    }
+    perimeter *= 1.03;
+  }
+}
+
+/** One camera pose, interpolated field by field. */
 export interface Pose {
-  angle: number; // where the camera stands
-  r: number;
+  x: number;
+  z: number;
   y: number;
-  yaw: number; // which way it looks (same convention as angle)
+  yaw: number;
   pitch: number;
   /** Lens shift in NDC units, so the painting sits beside/above the text card. */
   shiftX: number;
@@ -103,34 +166,34 @@ function frameRegion(vp: Viewport) {
       cy: 0,
     };
   }
-  return { fx: 0.9, fy: 0.46, cx: 0, cy: 0.36 };
+  // Leaves room for the card and the step controls below the painting.
+  return { fx: 0.9, fy: 0.42, cx: 0, cy: 0.4 };
 }
 
-export function buildPoses(hall: Hall, vp: Viewport): Pose[] {
+const TAU = Math.PI * 2;
+/** `a` shifted by whole turns to lie within ±π of `ref`. */
+const near = (a: number, ref: number) => a + TAU * Math.round((ref - a) / TAU);
+/** Yaw of a camera at (x, z) looking toward (tx, tz). */
+const yawTo = (x: number, z: number, tx: number, tz: number) => Math.atan2(tx - x, -(tz - z));
+
+export interface Path {
+  poses: Pose[];
+  /** Bend the entrance → first-painting walk around the tree. */
+  via: { x: number; z: number };
+}
+
+export function buildPath(room: Room, vp: Viewport): Path {
   const aspect = vp.width / vp.height;
   const t = Math.tan(((cameraFov(vp) / 2) * Math.PI) / 180);
   const { fx, fy, cx, cy } = frameRegion(vp);
-  const R = hall.radius;
-  const first = hall.slots[0];
-  const last = hall.slots[hall.slots.length - 1];
+  const { width: W, depth: D, slots } = room;
 
-  // Entrance: standing behind the tree, looking across it into the hall.
-  const introAngle = first.angle - 2.2;
-  const intro: Pose = {
-    angle: introAngle,
-    r: R * 0.9,
-    y: 2.4,
-    yaw: introAngle + Math.PI,
-    pitch: 0.12,
-    shiftX: 0,
-    shiftY: 0.28, // lift the tree above the title
-  };
-
-  const paintings = hall.slots.map<Pose>((s) => {
-    const d = Math.max(s.h / (2 * t * fy), s.w / (2 * t * aspect * fx));
+  const paintings = slots.map<Pose>((s) => {
+    const across = s.angle % Math.PI === 0 ? D : W; // room size facing this wall
+    const d = Math.min(across - 2, Math.max(s.h / (2 * t * fy), s.w / (2 * t * aspect * fx)));
     return {
-      angle: s.angle,
-      r: Math.max(0.8, s.apothem - d),
+      x: s.x - Math.sin(s.angle) * d,
+      z: s.z + Math.cos(s.angle) * d,
       y: PAINTING_Y,
       yaw: s.angle,
       pitch: 0,
@@ -139,19 +202,34 @@ export function buildPoses(hall: Hall, vp: Viewport): Pose[] {
     };
   });
 
-  // Exit: rise above the hall and look back down at the tree.
-  const outroAngle = last.angle + 0.7;
+  // Entrance: just inside the near wall, looking past the tree to the far wall.
+  const ix = W * 0.2;
+  const iz = D / 2 - 2.2;
+  const intro: Pose = {
+    x: ix,
+    z: iz,
+    y: 2.4,
+    yaw: near(yawTo(ix, iz, 0, -D * 0.15), paintings[0].yaw),
+    pitch: 0.12,
+    shiftX: 0,
+    shiftY: 0.28, // lift the tree above the title
+  };
+
+  // Exit: rise in the far-left corner and look back down at the tree.
+  const last = paintings[paintings.length - 1];
+  const ox = -W * 0.28;
+  const oz = -D * 0.12;
   const outro: Pose = {
-    angle: outroAngle,
-    r: R * 0.58,
+    x: ox,
+    z: oz,
     y: 6.2,
-    yaw: outroAngle + Math.PI,
+    yaw: near(yawTo(ox, oz, 0, 0), last.yaw + Math.PI / 2),
     pitch: -0.32,
     shiftX: 0,
     shiftY: 0,
   };
 
-  return [intro, ...paintings, outro];
+  return { poses: [intro, ...paintings, outro], via: { x: W * 0.32, z: -D * 0.05 } };
 }
 
 /** Hold still around each stop, move in between. */
@@ -160,14 +238,44 @@ export function plateau(f: number) {
   return x * x * (3 - 2 * x);
 }
 
-export function samplePose(poses: Pose[], progress: number, out: Pose): Pose {
+const smooth = (x: number) => {
+  const t = Math.min(1, Math.max(0, x));
+  return t * t * (3 - 2 * t);
+};
+
+/** How much of the way a visitor turns toward where they're walking. */
+const LOOK_AHEAD = 0.8;
+
+/**
+ * Pose at a point along the tour. Between two paintings it plays like a walk:
+ * turn away from the wall, walk (round corners too), turn to face the next piece.
+ */
+export function samplePose({ poses, via }: Path, progress: number, out: Pose): Pose {
   const p = Math.min(poses.length - 1, Math.max(0, progress));
   const i = Math.min(poses.length - 2, Math.floor(p));
-  const e = plateau(p - i);
+  const f = p - i;
   const a = poses[i];
   const b = poses[i + 1];
-  for (const k of Object.keys(a) as (keyof Pose)[]) {
-    out[k] = a[k] + (b[k] - a[k]) * e;
+  const betweenPaintings = i >= 1 && i + 1 <= poses.length - 2;
+
+  if (!betweenPaintings) {
+    const e = plateau(f);
+    for (const k of Object.keys(a) as (keyof Pose)[]) out[k] = a[k] + (b[k] - a[k]) * e;
+    if (i === 0) {
+      // Quadratic curve through `via` so the walk in skirts the tree.
+      const u = 1 - e;
+      out.x = u * u * a.x + 2 * u * e * via.x + e * e * b.x;
+      out.z = u * u * a.z + 2 * u * e * via.z + e * e * b.z;
+    }
+    return out;
   }
+
+  const e = smooth((f - 0.2) / 0.6); // position: move in the middle of the step
+  const turn = Math.min(smooth(f / 0.3), 1 - smooth((f - 0.7) / 0.3)); // look ahead while walking
+  for (const k of Object.keys(a) as (keyof Pose)[]) out[k] = a[k] + (b[k] - a[k]) * e;
+  const travel = near(yawTo(a.x, a.z, b.x, b.z), out.yaw);
+  out.yaw += (travel - out.yaw) * LOOK_AHEAD * turn;
+  out.shiftX *= 1 - turn;
+  out.shiftY *= 1 - turn;
   return out;
 }

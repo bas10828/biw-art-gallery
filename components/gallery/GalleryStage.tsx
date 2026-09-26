@@ -3,16 +3,15 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { MeshReflectorMaterial, Stars, useProgress } from "@react-three/drei";
 import * as THREE from "three";
-import { TOUR } from "@/lib/artworks";
+import { ARTIST_PORTRAIT, TOUR } from "@/lib/artworks";
 import {
   WALL_HEIGHT,
-  buildHall,
-  buildPoses,
+  buildPath,
+  buildRoom,
   cameraFov,
-  polar,
   samplePose,
-  type Hall,
   type Pose,
+  type Room,
 } from "@/lib/gallery/layout";
 import { tourState } from "@/lib/gallery/tourState";
 import Painting from "./Painting";
@@ -21,35 +20,44 @@ import Fireflies from "./Fireflies";
 
 const FOG = "#03050b";
 
-function Walls({ hall, dim }: { hall: Hall; dim: boolean }) {
+function Walls({ room, dim }: { room: Room; dim: boolean }) {
   const line = useMemo(() => new THREE.Color("#2a6dff").multiplyScalar(dim ? 0.45 : 1.6), [dim]);
+  const { width: W, depth: D } = room;
+  // [x, z, yaw of a viewer facing the wall, wall length]
+  const walls: [number, number, number, number][] = [
+    [0, -D / 2, 0, W],
+    [W / 2, 0, Math.PI / 2, D],
+    [0, D / 2, Math.PI, W],
+    [-W / 2, 0, -Math.PI / 2, D],
+  ];
   return (
     <>
-      {hall.slots.map((s) => {
-        const [x, z] = polar(s.angle, s.apothem);
-        const [lx, lz] = polar(s.angle, s.apothem - 0.03);
-        return (
-          <group key={s.art.id}>
-            <mesh position={[x, WALL_HEIGHT / 2, z]} rotation={[0, -s.angle, 0]}>
-              <planeGeometry args={[s.chord + 0.02, WALL_HEIGHT]} />
-              <meshStandardMaterial color="#1b2130" roughness={0.9} metalness={0} />
-            </mesh>
-            {/* Floor-level light line */}
-            <mesh position={[lx, 0.05, lz]} rotation={[0, -s.angle, 0]}>
-              <planeGeometry args={[s.chord, 0.025]} />
-              <meshBasicMaterial color={line} toneMapped={false} />
-            </mesh>
-          </group>
-        );
-      })}
+      {walls.map(([x, z, yaw, length]) => (
+        <group key={yaw} position={[x, 0, z]} rotation={[0, -yaw, 0]}>
+          <mesh position={[0, WALL_HEIGHT / 2, 0]}>
+            <planeGeometry args={[length, WALL_HEIGHT]} />
+            <meshStandardMaterial color="#1b2130" roughness={0.9} metalness={0} />
+          </mesh>
+          {/* Floor-level light line */}
+          <mesh position={[0, 0.05, 0.03]}>
+            <planeGeometry args={[length - 0.1, 0.025]} />
+            <meshBasicMaterial color={line} toneMapped={false} />
+          </mesh>
+          {/* Cornice line */}
+          <mesh position={[0, WALL_HEIGHT - 0.04, 0.03]}>
+            <planeGeometry args={[length - 0.1, 0.02]} />
+            <meshBasicMaterial color={line} toneMapped={false} transparent opacity={0.5} />
+          </mesh>
+        </group>
+      ))}
     </>
   );
 }
 
-function Floor({ radius, reflect }: { radius: number; reflect: boolean }) {
+function Floor({ room, reflect }: { room: Room; reflect: boolean }) {
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
-      <circleGeometry args={[radius + 0.5, 96]} />
+      <planeGeometry args={[room.width, room.depth]} />
       {reflect ? (
         <MeshReflectorMaterial
           blur={[400, 120]}
@@ -71,12 +79,13 @@ function Floor({ radius, reflect }: { radius: number; reflect: boolean }) {
   );
 }
 
-function CameraRig({ hall, parallax }: { hall: Hall; parallax: boolean }) {
+function CameraRig({ room, parallax }: { room: Room; parallax: boolean }) {
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
   const size = useThree((s) => s.size);
-  const poses = useMemo(() => buildPoses(hall, size), [hall, size]);
+  const path = useMemo(() => buildPath(room, size), [room, size]);
   const current = useRef<Pose | null>(null);
-  const target = useRef<Pose>({ ...poses[0] });
+  const target = useRef<Pose>({ ...path.poses[0] });
+  const walk = useRef({ velocity: 0, stride: 0, walking: false });
   const look = useMemo(() => new THREE.Vector3(), []);
   const reduced = useMemo(
     () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
@@ -89,16 +98,43 @@ function CameraRig({ hall, parallax }: { hall: Hall; parallax: boolean }) {
   }, [camera, size]);
 
   useFrame((_, dt) => {
-    samplePose(poses, tourState.progress, target.current);
-    if (!current.current) current.current = { ...target.current };
-    const c = current.current;
-    const k = reduced ? 12 : 2.6;
     const step = Math.min(dt, 0.1);
-    for (const key of Object.keys(c) as (keyof Pose)[]) {
-      c[key] = THREE.MathUtils.damp(c[key], target.current[key], k, step);
+    const w = walk.current;
+    // Arriving on a deep link / reload: start where the page is, don't walk there.
+    if (!current.current) tourState.cameraProgress = tourState.progress;
+
+    // Walk toward the scroll position at a human pace; long jumps go faster.
+    const diff = tourState.progress - tourState.cameraProgress;
+    const maxSpeed = reduced ? 50 : Math.max(0.55, Math.abs(diff) * 0.9);
+    const desired = THREE.MathUtils.clamp(diff * 2.2, -maxSpeed, maxSpeed);
+    w.velocity = THREE.MathUtils.damp(w.velocity, desired, 4, step);
+    tourState.cameraProgress += w.velocity * step;
+    if (Math.abs(diff) < 1e-4 && Math.abs(w.velocity) < 1e-3) {
+      tourState.cameraProgress = tourState.progress;
+      w.velocity = 0;
     }
 
-    const [x, z] = polar(c.angle, c.r);
+    samplePose(path, tourState.cameraProgress, target.current);
+    if (!current.current) current.current = { ...target.current };
+    const c = current.current;
+    for (const key of Object.keys(c) as (keyof Pose)[]) {
+      c[key] = THREE.MathUtils.damp(c[key], target.current[key], reduced ? 20 : 9, step);
+    }
+
+    // Head bob: about six steps per painting, fading in and out with speed.
+    const pace = Math.min(1, Math.abs(w.velocity) / 0.35);
+    w.stride += Math.abs(w.velocity) * step * 6;
+    const bob = reduced ? 0 : pace;
+    const bobY = Math.abs(Math.sin(w.stride * Math.PI)) * 0.045 * bob;
+    const sway = Math.sin(w.stride * Math.PI) * 0.025 * bob;
+
+    const walking = pace > 0.25;
+    if (walking !== w.walking) {
+      w.walking = walking;
+      document.documentElement.dataset.walking = walking ? "1" : "0";
+    }
+
+    const { x, z } = c;
     let px = 0;
     let py = 0;
     if (parallax) {
@@ -108,7 +144,7 @@ function CameraRig({ hall, parallax }: { hall: Hall; parallax: boolean }) {
     // Camera-right for a camera looking along `yaw`.
     const rx = Math.cos(c.yaw);
     const rz = Math.sin(c.yaw);
-    camera.position.set(x + rx * px, c.y + py, z + rz * px);
+    camera.position.set(x + rx * (px + sway), c.y + py + bobY, z + rz * (px + sway));
     look.set(
       camera.position.x + Math.sin(c.yaw) * Math.cos(c.pitch),
       camera.position.y + Math.sin(c.pitch),
@@ -130,25 +166,25 @@ function Scene({
   quality: "sm" | "lg";
   onSelect: (index: number) => void;
 }) {
-  const hall = useMemo(() => buildHall(TOUR), []);
+  const room = useMemo(() => buildRoom([...TOUR, ARTIST_PORTRAIT]), []);
   const high = quality === "lg";
 
   return (
     <>
       <color attach="background" args={[FOG]} />
-      <fog attach="fog" args={[FOG, 9, hall.radius * 3.2]} />
+      <fog attach="fog" args={[FOG, 9, Math.max(room.width, room.depth) * 1.7]} />
       <ambientLight intensity={0.5} color="#8ea2ff" />
       <hemisphereLight args={["#2a3f7a", "#050505", 0.5]} />
 
-      <CameraRig hall={hall} parallax={high} />
+      <CameraRig room={room} parallax={high} />
       <Stars radius={70} depth={30} count={high ? 2600 : 1200} factor={3.2} saturation={0.4} fade speed={0.4} />
 
-      <Walls hall={hall} dim={!high} />
-      <Floor radius={hall.radius} reflect={high} />
+      <Walls room={room} dim={!high} />
+      <Floor room={room} reflect={high} />
       <SpiritTree lowPower={!high} />
-      <Fireflies count={high ? 220 : 90} radius={hall.radius} />
+      <Fireflies count={high ? 220 : 90} radius={Math.min(room.width, room.depth) / 2} />
 
-      {hall.slots.map((slot, i) => (
+      {room.slots.map((slot, i) => (
         <Painting key={slot.art.id} slot={slot} index={i} quality={quality} onSelect={onSelect} />
       ))}
 

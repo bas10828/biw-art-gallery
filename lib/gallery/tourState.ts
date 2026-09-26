@@ -4,6 +4,8 @@
 export const tourState = {
   /** 0 = entrance, 1..N = paintings, N+1 = exit. Fractional in between. */
   progress: 0,
+  /** Where the camera actually is along the tour; walks toward `progress`. */
+  cameraProgress: 0,
   /** Pointer position in NDC, for subtle parallax on desktop. */
   pointerX: 0,
   pointerY: 0,

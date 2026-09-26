@@ -151,7 +151,7 @@ body {
   display: flex;
   height: 100svh;
   align-items: flex-end;
-  padding: 0 1.25rem max(2rem, env(safe-area-inset-bottom));
+  padding: 0 1.25rem calc(5.25rem + env(safe-area-inset-bottom));
 }
 @variant wide {
   .tour-section {
@@ -228,8 +228,8 @@ body {
   }
 }
 
-.about-section {
-  background: linear-gradient(180deg, rgba(3, 5, 11, 0) 0%, #03050b 26svh);
+.exit-section {
+  background: linear-gradient(180deg, rgba(3, 5, 11, 0) 35%, rgba(3, 5, 11, 0.85) 75%, #03050b 100%);
 }
 
 @keyframes overlay-in {
@@ -272,9 +272,38 @@ body {
   z-index: -1;
 }
 
-/* On phones the popup would cover the painting; show it only at the entrance and the end. */
-@media not ((min-width: 768px) and (orientation: landscape)), (max-height: 600px) {
-  html[data-tour="on"] .merch-popup {
-    display: none;
+/* The popup would cover the paintings; show it only at the entrance and the end. */
+html[data-tour="on"] .merch-popup {
+  display: none;
+}
+
+/* Text steps aside while the visitor walks between paintings. */
+.tour-section {
+  transition: opacity 0.45s ease;
+}
+html[data-walking="1"] .tour-section {
+  opacity: 0;
+}
+
+.step-nav {
+  left: 50%;
+  bottom: max(1.25rem, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+}
+@variant wide {
+  .step-nav {
+    left: 7vw;
+    bottom: 2.5rem;
+    transform: none;
   }
+}
+.step-btn {
+  height: 2.75rem;
+  min-width: 2.75rem;
+  padding: 0 1.1rem;
+  font-size: 0.8rem;
+}
+.step-next {
+  color: var(--color-gold-light);
+  border-color: rgba(212, 168, 67, 0.45);
 }

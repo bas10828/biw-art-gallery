@@ -258,6 +258,19 @@ export const ARTWORKS: Artwork[] = [
   },
 ];
 
+/** The artist's portrait, hung as the last stop of the tour (not an artwork). */
+export const ARTIST_PORTRAIT: Artwork = {
+  id: 0,
+  file: "merch-lifestyle-biw.png",
+  ratio: 1.333,
+  title: "บิว โคตรเสียว",
+  titleEn: "Biw Khodseaw",
+  year: "",
+  medium: "",
+  story: "",
+  storyEn: "",
+};
+
 /** Order of the 3D tour: the featured piece first, then newest additions first. */
 export const TOUR: Artwork[] = [
   ...ARTWORKS.filter((a) => a.featured),
