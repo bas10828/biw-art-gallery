@@ -172,7 +172,7 @@ function frameRegion(vp: Viewport) {
 
 const TAU = Math.PI * 2;
 /** `a` shifted by whole turns to lie within ±π of `ref`. */
-const near = (a: number, ref: number) => a + TAU * Math.round((ref - a) / TAU);
+export const near = (a: number, ref: number) => a + TAU * Math.round((ref - a) / TAU);
 /** Yaw of a camera at (x, z) looking toward (tx, tz). */
 const yawTo = (x: number, z: number, tx: number, tz: number) => Math.atan2(tx - x, -(tz - z));
 
@@ -244,7 +244,7 @@ const smooth = (x: number) => {
 };
 
 /** How much of the way a visitor turns toward where they're walking. */
-const LOOK_AHEAD = 0.8;
+const LOOK_AHEAD = 0.3;
 
 /**
  * Pose at a point along the tour. Between two paintings it plays like a walk:
@@ -278,4 +278,134 @@ export function samplePose({ poses, via }: Path, progress: number, out: Pose): P
   out.shiftX *= 1 - turn;
   out.shiftY *= 1 - turn;
   return out;
+}
+
+/** Shortcut walks keep at least this far from the tree at the room's centre. */
+const TREE_CLEARANCE = 3.5;
+/** Walking pace across the room, m/s. */
+const WALK_SPEED = 1.4;
+/** Longest a shortcut walk may take, seconds; longer crossings speed up. */
+const MAX_WALK = 4.5;
+/** Turning pace, rad/s. */
+const TURN_SPEED = 1.8;
+
+/**
+ * A direct walk across the room for long jumps (index, rail, last → first):
+ * turn toward the destination, walk there, turn to face it. Replaces running
+ * the whole wall path past every painting in between.
+ */
+export interface Shortcut {
+  from: Pose;
+  to: Pose;
+  /** Quadratic control point; bends the line around the tree when needed. */
+  ctrl: { x: number; z: number };
+  /** Yaw walking off, walking in, and facing the destination. */
+  headOut: number;
+  headIn: number;
+  toYaw: number;
+  turnOut: number;
+  walk: number;
+  turnIn: number;
+  length: number;
+}
+
+const clampAbs = (v: number, limit: number) => Math.min(limit, Math.max(-limit, v));
+
+const bezier = (a: number, c: number, b: number, e: number) =>
+  (1 - e) * (1 - e) * a + 2 * (1 - e) * e * c + e * e * b;
+
+export function planShortcut(room: Room, from: Pose, to: Pose): Shortcut {
+  const dx = to.x - from.x;
+  const dz = to.z - from.z;
+  const len2 = dx * dx + dz * dz;
+
+  // Closest approach of the straight line to the tree; detour through a side
+  // point if it gets too close.
+  const t = len2 > 1e-6 ? Math.min(1, Math.max(0, -(from.x * dx + from.z * dz) / len2)) : 0;
+  const px = from.x + dx * t;
+  const pz = from.z + dz * t;
+  const dist = Math.hypot(px, pz);
+  let ctrl = { x: (from.x + to.x) / 2, z: (from.z + to.z) / 2 };
+  if (len2 > 1e-6 && dist < TREE_CLEARANCE) {
+    let nx = px;
+    let nz = pz;
+    if (dist < 1e-3) {
+      // Straight through the trunk: go round on the side perpendicular to travel.
+      nx = -dz;
+      nz = dx;
+    }
+    const n = Math.hypot(nx, nz);
+    const vx = clampAbs((nx / n) * TREE_CLEARANCE, room.width / 2 - 1);
+    const vz = clampAbs((nz / n) * TREE_CLEARANCE, room.depth / 2 - 1);
+    // Control point that puts the curve's midpoint on the side point.
+    ctrl = { x: 2 * vx - (from.x + to.x) / 2, z: 2 * vz - (from.z + to.z) / 2 };
+  }
+
+  let length = 0;
+  for (let i = 1, x0 = from.x, z0 = from.z; i <= 16; i++) {
+    const x1 = bezier(from.x, ctrl.x, to.x, i / 16);
+    const z1 = bezier(from.z, ctrl.z, to.z, i / 16);
+    length += Math.hypot(x1 - x0, z1 - z0);
+    x0 = x1;
+    z0 = z1;
+  }
+
+  const moving = length > 0.3;
+  const headOut = moving ? near(yawTo(from.x, from.z, ctrl.x, ctrl.z), from.yaw) : from.yaw;
+  const headIn = moving ? near(yawTo(ctrl.x, ctrl.z, to.x, to.z), headOut) : headOut;
+  const toYaw = near(to.yaw, headIn);
+  const turn = (a: number, b: number) => Math.min(1.4, Math.abs(b - a) / TURN_SPEED);
+
+  return {
+    from: { ...from },
+    to: { ...to },
+    ctrl,
+    headOut,
+    headIn,
+    toYaw,
+    turnOut: turn(from.yaw, headOut),
+    walk: moving ? Math.min(MAX_WALK, Math.max(0.6, length / WALK_SPEED)) : 0,
+    turnIn: turn(headIn, toYaw),
+    length,
+  };
+}
+
+export const shortcutDuration = (s: Shortcut) => s.turnOut + s.walk + s.turnIn;
+
+/**
+ * Pose `time` seconds into a shortcut. Returns walking speed in m/s (for head
+ * bob) and how far through the walk leg it is (0..1).
+ */
+export function sampleShortcut(s: Shortcut, time: number, out: Pose) {
+  const { from, to } = s;
+  Object.assign(out, from);
+
+  if (time < s.turnOut) {
+    const e = smooth(time / s.turnOut);
+    out.yaw = from.yaw + (s.headOut - from.yaw) * e;
+    out.shiftX = from.shiftX * (1 - e);
+    out.shiftY = from.shiftY * (1 - e);
+    return { speed: 0, walked: 0 };
+  }
+
+  const w = time - s.turnOut;
+  if (w < s.walk) {
+    const u = w / s.walk;
+    const e = smooth(u);
+    out.x = bezier(from.x, s.ctrl.x, to.x, e);
+    out.z = bezier(from.z, s.ctrl.z, to.z, e);
+    out.y = from.y + (to.y - from.y) * e;
+    out.pitch = from.pitch + (to.pitch - from.pitch) * e;
+    out.yaw = s.headOut + (s.headIn - s.headOut) * e;
+    out.shiftX = 0;
+    out.shiftY = 0;
+    return { speed: (s.length / s.walk) * 6 * u * (1 - u), walked: e };
+  }
+
+  const e = s.turnIn > 0 ? smooth((w - s.walk) / s.turnIn) : 1;
+  Object.assign(out, to);
+  out.yaw = s.headIn + (s.toYaw - s.headIn) * e;
+  out.shiftX = to.shiftX * e;
+  out.shiftY = to.shiftY * e;
+  return { speed: 0, walked: 1 };
 }

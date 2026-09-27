@@ -9,9 +9,14 @@ import {
   buildPath,
   buildRoom,
   cameraFov,
+  near,
+  planShortcut,
+  sampleShortcut,
   samplePose,
+  shortcutDuration,
   type Pose,
   type Room,
+  type Shortcut,
 } from "@/lib/gallery/layout";
 import { tourState } from "@/lib/gallery/tourState";
 import Painting from "./Painting";
@@ -19,6 +24,10 @@ import SpiritTree from "./SpiritTree";
 import Fireflies from "./Fireflies";
 
 const FOG = "#03050b";
+/** Tour distance beyond which the camera cuts across the room instead of walking the walls. */
+const JUMP = 1.5;
+/** How far the page may move during a shortcut before it re-plans toward the new spot. */
+const RETARGET = 0.25;
 
 function Walls({ room, dim }: { room: Room; dim: boolean }) {
   const line = useMemo(() => new THREE.Color("#2a6dff").multiplyScalar(dim ? 0.45 : 1.6), [dim]);
@@ -86,6 +95,12 @@ function CameraRig({ room, parallax }: { room: Room; parallax: boolean }) {
   const current = useRef<Pose | null>(null);
   const target = useRef<Pose>({ ...path.poses[0] });
   const walk = useRef({ velocity: 0, stride: 0, walking: false });
+  const shortcut = useRef<{
+    plan: Shortcut;
+    time: number;
+    progress: number;
+    fromProgress: number;
+  } | null>(null);
   const look = useMemo(() => new THREE.Vector3(), []);
   const reduced = useMemo(
     () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
@@ -103,32 +118,64 @@ function CameraRig({ room, parallax }: { room: Room; parallax: boolean }) {
     // Arriving on a deep link / reload: start where the page is, don't walk there.
     if (!current.current) tourState.cameraProgress = tourState.progress;
 
-    // Walk toward the scroll position at a human pace; long jumps go faster.
-    const diff = tourState.progress - tourState.cameraProgress;
-    const maxSpeed = reduced ? 50 : Math.max(0.55, Math.abs(diff) * 0.9);
-    const desired = THREE.MathUtils.clamp(diff * 2.2, -maxSpeed, maxSpeed);
-    w.velocity = THREE.MathUtils.damp(w.velocity, desired, 4, step);
-    tourState.cameraProgress += w.velocity * step;
-    if (Math.abs(diff) < 1e-4 && Math.abs(w.velocity) < 1e-3) {
-      tourState.cameraProgress = tourState.progress;
+    let pace: number;
+    const jump = Math.abs(tourState.progress - tourState.cameraProgress) > JUMP;
+    const sc = shortcut.current;
+    if (!reduced && (sc ? Math.abs(tourState.progress - sc.progress) > RETARGET : jump)) {
+      // Long jump: walk straight across the room instead of along every wall.
+      // Starts from wherever the camera is now, even mid-shortcut.
+      const to = samplePose(path, tourState.progress, { ...target.current });
+      shortcut.current = {
+        plan: planShortcut(room, { ...target.current }, to),
+        time: 0,
+        progress: tourState.progress,
+        fromProgress: tourState.cameraProgress,
+      };
       w.velocity = 0;
     }
 
-    samplePose(path, tourState.cameraProgress, target.current);
+    if (shortcut.current) {
+      const s = shortcut.current;
+      s.time += step;
+      const { speed, walked } = sampleShortcut(s.plan, s.time, target.current);
+      // Light the destination once past halfway, not every painting passed.
+      tourState.cameraProgress = walked < 0.5 ? s.fromProgress : s.progress;
+      pace = Math.min(1, speed / 1.0);
+      w.stride += Math.min(2, speed / 0.7) * step; // ~0.7 m steps, never faster than a brisk 2 per second
+      if (s.time >= shortcutDuration(s.plan)) {
+        shortcut.current = null;
+        tourState.cameraProgress = s.progress;
+        samplePose(path, s.progress, target.current);
+        // The shortcut may end a whole turn away from the wall path's yaw.
+        if (current.current) current.current.yaw = near(current.current.yaw, target.current.yaw);
+      }
+    } else {
+      // Step to the neighbouring painting at a human pace.
+      const diff = tourState.progress - tourState.cameraProgress;
+      const maxSpeed = reduced ? 50 : 0.6;
+      const desired = THREE.MathUtils.clamp(diff * 2.2, -maxSpeed, maxSpeed);
+      w.velocity = THREE.MathUtils.damp(w.velocity, desired, 4, step);
+      tourState.cameraProgress += w.velocity * step;
+      if (Math.abs(diff) < 1e-4 && Math.abs(w.velocity) < 1e-3) {
+        tourState.cameraProgress = tourState.progress;
+        w.velocity = 0;
+      }
+      samplePose(path, tourState.cameraProgress, target.current);
+      // Head bob: about six steps per painting, fading in and out with speed.
+      pace = Math.min(1, Math.abs(w.velocity) / 0.35);
+      w.stride += Math.abs(w.velocity) * step * 6;
+    }
+
     if (!current.current) current.current = { ...target.current };
     const c = current.current;
     for (const key of Object.keys(c) as (keyof Pose)[]) {
       c[key] = THREE.MathUtils.damp(c[key], target.current[key], reduced ? 20 : 9, step);
     }
 
-    // Head bob: about six steps per painting, fading in and out with speed.
-    const pace = Math.min(1, Math.abs(w.velocity) / 0.35);
-    w.stride += Math.abs(w.velocity) * step * 6;
-    const bob = reduced ? 0 : pace;
-    const bobY = Math.abs(Math.sin(w.stride * Math.PI)) * 0.045 * bob;
-    const sway = Math.sin(w.stride * Math.PI) * 0.025 * bob;
+    // Kept small: a strong bob and side sway made visitors dizzy.
+    const bobY = reduced ? 0 : Math.abs(Math.sin(w.stride * Math.PI)) * 0.015 * pace;
 
-    const walking = pace > 0.25;
+    const walking = !!shortcut.current || pace > 0.25;
     if (walking !== w.walking) {
       w.walking = walking;
       document.documentElement.dataset.walking = walking ? "1" : "0";
@@ -144,7 +191,7 @@ function CameraRig({ room, parallax }: { room: Room; parallax: boolean }) {
     // Camera-right for a camera looking along `yaw`.
     const rx = Math.cos(c.yaw);
     const rz = Math.sin(c.yaw);
-    camera.position.set(x + rx * (px + sway), c.y + py + bobY, z + rz * (px + sway));
+    camera.position.set(x + rx * px, c.y + py + bobY, z + rz * px);
     look.set(
       camera.position.x + Math.sin(c.yaw) * Math.cos(c.pitch),
       camera.position.y + Math.sin(c.pitch),
